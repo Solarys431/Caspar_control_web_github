@@ -18,6 +18,7 @@
 .env.development.local
 .env.test.local
 .env.production.local
+.augment-guidelines
 
 npm-debug.log*
 yarn-debug.log*
@@ -32,11 +33,6 @@ yarn-error.log*
 # Environment variables
 .env
 
-# Debug logs
-debug.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
 # Local development
 .eslintcache
+debug.log
