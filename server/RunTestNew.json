@@ -1,0 +1,88 @@
+{
+  "name": "RunTestNew",
+  "items": [
+    {
+      "id": "18892e97-fe09-4cee-b813-34158c3cedec",
+      "type": "MEDIA",
+      "name": "24",
+      "data": {
+        "clip": "\"NEBULA-2\"  MOVIE  2591068 20250503140901 96 1/24",
+        "channel": 1,
+        "layer": 10,
+        "customName": "girolamo",
+        "loop": false,
+        "autoNext": false,
+        "linkedTemplates": []
+      },
+      "isPlaying": true,
+      "playingStartTime": "2025-05-07T23:50:14.452Z"
+    },
+    {
+      "id": "513729ea-e4f9-48a8-b252-6d23c157ced5",
+      "type": "TEMPLATE",
+      "name": "DEBUG_LOWER_THIRD",
+      "data": {
+        "template": "DEBUG_LOWER_THIRD",
+        "channel": 1,
+        "layer": 11,
+        "cgLayer": "1",
+        "playOnLoad": true,
+        "data": {
+          "title": "Emanuel Kant",
+          "subtitle": "Filosofo"
+        },
+        "customName": "Super Kant"
+      },
+      "isPlaying": false,
+      "playingStartTime": null
+    },
+    {
+      "id": "65f9b502-3c97-4792-b533-0dd9f5ea41d9",
+      "type": "MEDIA",
+      "name": "24",
+      "data": {
+        "clip": "\"NEBULA-4\"  MOVIE  3365674 20250503140913 121 1/24",
+        "channel": 1,
+        "layer": 10,
+        "customName": "pinocchio",
+        "loop": false,
+        "autoNext": false,
+        "linkedTemplates": []
+      },
+      "isPlaying": false,
+      "playingStartTime": null
+    },
+    {
+      "id": "d6c7f419-5cb6-4f0f-8735-79542367a164",
+      "type": "MEDIA",
+      "name": "24",
+      "data": {
+        "clip": "\"NEBULA-6\"  MOVIE  3131518 20250503133450 121 1/24",
+        "channel": 1,
+        "layer": 10,
+        "customName": "Test1",
+        "loop": false,
+        "autoNext": false,
+        "linkedTemplates": []
+      },
+      "isPlaying": false,
+      "playingStartTime": null
+    },
+    {
+      "id": "d87ee521-3849-4fea-a74e-f34c8927eda7",
+      "type": "TEMPLATE",
+      "name": "DEBUG_LOGO",
+      "data": {
+        "template": "DEBUG_LOGO",
+        "channel": 1,
+        "layer": 12,
+        "cgLayer": "1",
+        "playOnLoad": true,
+        "data": {},
+        "customName": "logo canale"
+      },
+      "isPlaying": false,
+      "playingStartTime": null
+    }
+  ]
+}

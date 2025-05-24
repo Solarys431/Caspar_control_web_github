@@ -1,0 +1,178 @@
+{
+    "version": "1.0",
+    "items": [
+        {
+            "id": "d4dea9f3-61a1-40e2-8608-d72ae689069e",
+            "type": "MEDIA",
+            "name": "clip test1",
+            "data": {
+                "channel": 1,
+                "layer": 10,
+                "clip": "\"NEBULA-3\"  MOVIE  1935418 20250505153851 143 1/20",
+                "display_name": "clip test1",
+                "loop": false,
+                "transition": "CUT",
+                "duration": 0,
+                "auto": false
+            },
+            "enabled": true
+        },
+        {
+            "id": "e3370616-a47e-4e5d-a37a-1ad701c0bb24",
+            "type": "MEDIA",
+            "name": "clip test2",
+            "data": {
+                "channel": 1,
+                "layer": 10,
+                "clip": "\"NEBULA-4\"  MOVIE  3365674 20250505153851 121 1/24",
+                "display_name": "clip test2",
+                "loop": false,
+                "transition": "CUT",
+                "duration": 0,
+                "auto": false
+            },
+            "enabled": true
+        },
+        {
+            "id": "e25360d3-5e82-4521-917c-810f4a38ecf4",
+            "type": "MEDIA",
+            "name": "clip test3",
+            "data": {
+                "channel": 1,
+                "layer": 10,
+                "clip": "\"NEBULA-5\"  MOVIE  3372656 20250505153851 121 1/24",
+                "display_name": "clip test3",
+                "loop": false,
+                "transition": "CUT",
+                "duration": 0,
+                "auto": false
+            },
+            "enabled": true
+        },
+        {
+            "id": "90cf8c7a-5c81-4b30-a1e9-c27f91fbfc71",
+            "type": "TEMPLATE",
+            "name": "Super Kant",
+            "data": {
+                "channel": 1,
+                "layer": 20,
+                "cg_layer": 1,
+                "template": "DEBUG_LOWER_THIRD",
+                "display_name": "Super Kant",
+                "play_on_load": true,
+                "data": "{\\\"title\\\":\\\"Emmanuel Kant\\\",\\\"subtitle\\\":\\\"Filosofo\\\"}"
+            },
+            "enabled": true
+        },
+        {
+            "id": "ddbbf317-dd9e-4066-9910-06277462e1e0",
+            "type": "TEMPLATE",
+            "name": "Ticker Conclave",
+            "data": {
+                "channel": 1,
+                "layer": 21,
+                "cg_layer": 1,
+                "template": "TICKER_TEMPLATE",
+                "display_name": "Ticker Conclave",
+                "play_on_load": true,
+                "data": "{\\\"text\\\":\\\"sadsadssa asdsadsad asdasdsa asddsaas asdasdsa asdasd asdsad asdasdsad asdsadas asdsadas asdasdsa asdasdasd asdasd asdsads asdasd\\\"}"
+            },
+            "enabled": true
+        },
+        {
+            "id": "384d9df2-5c5d-4b16-818e-36dabfa92942",
+            "type": "TEMPLATE",
+            "name": "Logo Canale",
+            "data": {
+                "channel": 1,
+                "layer": 22,
+                "cg_layer": 1,
+                "template": "DEBUG_LOGO",
+                "display_name": "Logo Canale",
+                "play_on_load": true,
+                "data": "{\\\"text\\\":\\\"SKY TV\\\"}"
+            },
+            "enabled": true
+        },
+        {
+            "id": "0fd11d0e-8576-4b07-8c35-41ea3bc40fd4",
+            "type": "MEDIA",
+            "name": "era uno di noi",
+            "data": {
+                "channel": 1,
+                "layer": 10,
+                "clip": "\"NEBULA-6\"  MOVIE  3131518 20250505153851 121 1/24",
+                "display_name": "era uno di noi",
+                "loop": false,
+                "transition": "CUT",
+                "duration": 0,
+                "auto": false
+            },
+            "enabled": true
+        },
+        {
+            "id": "9554e205-886b-470a-ba73-5119e4da100f",
+            "type": "MEDIA",
+            "name": "pinuccio",
+            "data": {
+                "channel": 1,
+                "layer": 10,
+                "clip": "\"NEBULA-7\"  MOVIE  2206334 20250505153851 121 1/24",
+                "display_name": "pinuccio",
+                "loop": false,
+                "transition": "CUT",
+                "duration": 0,
+                "auto": false
+            },
+            "enabled": true
+        },
+        {
+            "id": "6068d998-c171-4fad-9a73-7c860f475836",
+            "type": "MEDIA",
+            "name": "collodi",
+            "data": {
+                "channel": 1,
+                "layer": 10,
+                "clip": "\"NEBULA-8\"  MOVIE  2704149 20250505153851 121 1/24",
+                "display_name": "collodi",
+                "loop": false,
+                "transition": "CUT",
+                "duration": 0,
+                "auto": false
+            },
+            "enabled": true
+        },
+        {
+            "id": "be86be46-35e6-49da-9659-d194eb1e114b",
+            "type": "MEDIA",
+            "name": "si puo fare",
+            "data": {
+                "channel": 1,
+                "layer": 10,
+                "clip": "\"NEBULA-9\"  MOVIE  3166207 20250505153851 121 1/24",
+                "display_name": "si puo fare",
+                "loop": false,
+                "transition": "CUT",
+                "duration": 0,
+                "auto": false
+            },
+            "enabled": true
+        },
+        {
+            "id": "693c0996-07b4-41e1-a65b-465402cfb7c2",
+            "type": "MEDIA",
+            "name": "eccolo!",
+            "data": {
+                "channel": 1,
+                "layer": 10,
+                "clip": "\"NEBULA-2\"  MOVIE  2591068 20250505153851 96 1/24",
+                "display_name": "eccolo!",
+                "loop": false,
+                "transition": "CUT",
+                "duration": 0,
+                "auto": false
+            },
+            "enabled": true
+        }
+    ]
+}

@@ -1,0 +1,36 @@
+{
+  "name": "casparcg-control-web",
+  "version": "1.0.0",
+  "description": "Web app professionale per il controllo di CasparCG con tema dark",
+  "main": "index.js",
+  "scripts": {
+    "start": "concurrently \"npm run server\" \"npm run client\"",
+    "start:preview": "concurrently \"npm run server:preview\" \"npm run client\"",
+    "server": "cd server && npm start",
+    "server:preview": "cd server && node start_with_preview.js",
+    "client": "cd client && npm start",
+    "install-all": "npm install && cd server && npm install && cd ../client && npm install",
+    "build": "cd client && npm run build",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "casparcg",
+    "broadcast",
+    "playout",
+    "graphics",
+    "web",
+    "react",
+    "nodejs"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^7.6.0"
+  },
+  "dependencies": {
+    "date-fns": "^4.1.0",
+    "hls.js": "^1.6.2",
+    "osc": "^2.4.5",
+    "react-big-calendar": "^1.18.0"
+  }
+}
