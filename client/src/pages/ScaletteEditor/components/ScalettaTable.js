@@ -5,8 +5,243 @@ import {
 } from '@mui/material';
 import PersonIcon from '@mui/icons-material/Person';
 import ItemActionsCell from './ItemActionsCell';
+import ItemTypeIcon from './ItemTypeIcon';
+import StatusBadge, { useItemStatus } from './StatusBadge';
+import StoryContentTooltip from './StoryContentTooltip';
+import { ItemSelectionCheckbox } from './SelectionCheckbox';
 
-// Stile CSS per la tabella
+/**
+ * Componente per una singola riga della tabella
+ */
+const ScalettaTableRow = React.memo(({
+  item,
+  index,
+  selectedItemIndex,
+  dragOverIndex,
+  canEdit,
+  editingStatusByItemId,
+  visibleColumns,
+  selectedItemsSet,
+  onSelectItem,
+  onItemSelectionChange,
+  onEditItem,
+  onPlayItem,
+  onPauseItem,
+  onStopItem,
+  onRemoveItem,
+  onPlayTemplate,
+  onStopTemplate,
+  onRemoveTemplate,
+  onPlayStory,
+  onStopStory,
+  onDragStart,
+  onDragOver,
+  onDragEnd,
+  onDrop
+}) => {
+  const itemStatus = useItemStatus(item, editingStatusByItemId);
+
+  return (
+    <TableRow
+      key={item.id}
+      hover
+      sx={{
+        ...tableStyles.tableRow,
+        cursor: canEdit ? 'move' : 'pointer',
+        backgroundColor: selectedItemIndex === index
+          ? 'rgba(76, 175, 80, 0.3)' // Verde per l'elemento selezionato
+          : selectedItemIndex !== -1 && index > selectedItemIndex
+            ? 'rgba(255, 152, 0, 0.15)' // Arancione chiaro per gli elementi successivi
+            : dragOverIndex === index
+              ? 'rgba(25, 118, 210, 0.12)' // Blu per il drag over
+              : 'inherit'
+      }}
+      className={dragOverIndex === index ? 'drag-over' : 'drag-item'}
+      draggable={canEdit}
+      onClick={() => {
+        console.log("Click sulla riga della tabella, indice:", index);
+        onSelectItem(index);
+      }}
+      onDragStart={canEdit ? (e) => onDragStart(e, index) : null}
+      onDragOver={canEdit ? (e) => onDragOver(e, index) : null}
+      onDragEnd={canEdit ? onDragEnd : null}
+      onDrop={canEdit ? (e) => onDrop(e, index) : null}
+    >
+      {/* Checkbox selezione elemento */}
+      <TableCell sx={tableStyles.tableCell}>
+        <ItemSelectionCheckbox
+          checked={selectedItemsSet.has(item.id)}
+          onChange={(checked) => onItemSelectionChange && onItemSelectionChange(item.id, checked)}
+          itemId={item.id}
+          itemName={item.data?.customName || item.name}
+          size="small"
+        />
+      </TableCell>
+
+      {visibleColumns.includes('index') && (
+        <TableCell sx={tableStyles.tableCell}>{index + 1}</TableCell>
+      )}
+      {visibleColumns.includes('startTime') && (
+        <TableCell sx={tableStyles.tableCell}>{item.data?.timing?.startTime || '00:00:00'}</TableCell>
+      )}
+      {visibleColumns.includes('duration') && (
+        <TableCell sx={tableStyles.tableCell}>{item.data?.timing?.duration || '00:00:00'}</TableCell>
+      )}
+      {visibleColumns.includes('location') && (
+        <TableCell sx={tableStyles.tableCell}>
+          {item.data?.location ||
+           (item.data?.casparcgConfig ?
+            `CH${item.data?.casparcgConfig?.channel}-L${item.data?.casparcgConfig?.layer}` :
+            'N/A')}
+        </TableCell>
+      )}
+      {visibleColumns.includes('name') && (
+        <TableCell sx={tableStyles.enhancedNameCell}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {/* Icona tipo elemento */}
+            <ItemTypeIcon
+              type={item.type}
+              size="small"
+              showLabel={false}
+            />
+
+            {/* Nome con tooltip per STORY */}
+            {item.type === 'STORY' && item.data?.content ? (
+              <StoryContentTooltip
+                content={item.data.content}
+                title={item.data?.customName || item.name}
+                item={item}
+                onClick={() => onEditItem(item)}
+              >
+                <Typography variant="body2" sx={{
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                  '&:hover': {
+                    color: 'warning.main',
+                    textDecoration: 'underline'
+                  }
+                }}>
+                  {item.data?.customName || 'Storia senza nome'}
+                </Typography>
+              </StoryContentTooltip>
+            ) : (
+              <Typography variant="body2" sx={{ fontWeight: 500 }}>
+                {item.data?.customName || 'Senza nome'}
+              </Typography>
+            )}
+
+            {/* Status badge */}
+            <StatusBadge
+              status={itemStatus}
+              size="small"
+              variant="minimal"
+              showLabel={false}
+            />
+          </Box>
+        </TableCell>
+      )}
+      {visibleColumns.includes('file') && (
+        <TableCell sx={tableStyles.tableCell}>
+          {item.type === 'MEDIA' ? (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <ItemTypeIcon type="MEDIA" size="small" variant="icon" showLabel={false} />
+              <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
+                {item.data?.clip || 'N/A'}
+              </Typography>
+            </Box>
+          ) : item.type === 'TEMPLATE' ? (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+              <ItemTypeIcon type="TEMPLATE" size="small" variant="icon" showLabel={false} />
+              <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
+                {item.data?.template || 'N/A'}
+              </Typography>
+            </Box>
+          ) : item.type === 'STORY' ? (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+              {item.data?.mediaDetails?.clipPath && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <ItemTypeIcon type="MEDIA" size="small" variant="icon" showLabel={false} />
+                  <Typography variant="body2" sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>
+                    {item.data.mediaDetails.clipPath.split('/').pop()}
+                  </Typography>
+                </Box>
+              )}
+              {item.data?.templatesDetails && item.data.templatesDetails.length > 0 ? (
+                item.data.templatesDetails.map((template, idx) => (
+                  <Box key={idx} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <ItemTypeIcon type="TEMPLATE" size="small" variant="icon" showLabel={false} />
+                    <Typography variant="body2" sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>
+                      {template.templateFile.split('/').pop()}
+                    </Typography>
+                  </Box>
+                ))
+              ) : item.data?.templateDetails?.templateFile && (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <ItemTypeIcon type="TEMPLATE" size="small" variant="icon" showLabel={false} />
+                  <Typography variant="body2" sx={{ fontSize: '0.75rem', color: 'text.secondary' }}>
+                    {item.data.templateDetails.templateFile.split('/').pop()}
+                  </Typography>
+                </Box>
+              )}
+              {!item.data?.mediaDetails?.clipPath &&
+               !item.data?.templatesDetails?.length &&
+               !item.data?.templateDetails?.templateFile && (
+                <Typography variant="body2" sx={{ fontSize: '0.75rem', color: 'text.disabled', fontStyle: 'italic' }}>
+                  Nessun file associato
+                </Typography>
+              )}
+            </Box>
+          ) : (
+            <Typography variant="body2" sx={{ fontSize: '0.8rem', color: 'text.disabled' }}>
+              N/A
+            </Typography>
+          )}
+        </TableCell>
+      )}
+      {visibleColumns.includes('notes') && (
+        <TableCell sx={tableStyles.tableCell}>{item.data?.notes || ''}</TableCell>
+      )}
+      {visibleColumns.includes('outPoint') && (
+        <TableCell sx={tableStyles.tableCell}>{item.data?.timing?.outPoint || '00:00:00'}</TableCell>
+      )}
+      {visibleColumns.includes('inPoint') && (
+        <TableCell sx={tableStyles.tableCell}>{item.data?.timing?.inPoint || '00:00:00'}</TableCell>
+      )}
+      {visibleColumns.includes('actions') && (
+        <TableCell sx={tableStyles.tableCell}>
+        {/* Mostra l'indicatore di modifica se l'elemento è in modifica da un altro utente */}
+        {editingStatusByItemId[item.id] && (
+          <Tooltip title={`In modifica da ${editingStatusByItemId[item.id].userName}`}>
+            <Badge color="warning" variant="dot">
+              <PersonIcon fontSize="small" />
+            </Badge>
+          </Tooltip>
+        )}
+
+        {/* Utilizziamo il nuovo componente ItemActionsCell */}
+        <ItemActionsCell
+          item={item}
+          canEdit={canEdit}
+          editingStatusByItemId={editingStatusByItemId}
+          onEditItem={onEditItem}
+          onPlayItem={onPlayItem}
+          onPauseItem={onPauseItem}
+          onStopItem={onStopItem}
+          onRemoveItem={onRemoveItem}
+          onPlayTemplate={onPlayTemplate}
+          onStopTemplate={onStopTemplate}
+          onRemoveTemplate={onRemoveTemplate}
+          onPlayStory={onPlayStory}
+          onStopStory={onStopStory}
+          isPlayoutOperator={true}
+        />
+      </TableCell>
+      )}
+    </TableRow>
+  );
+});
+
+// Stile CSS per la tabella con miglioramenti estetici
 const tableStyles = {
   stickyHeader: {
     backgroundColor: '#1e1e1e',
@@ -19,18 +254,34 @@ const tableStyles = {
     },
     '&:hover': {
       backgroundColor: '#3d3d3d',
+      transform: 'translateY(-1px)',
+      transition: 'all 0.2s ease-in-out',
+      boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
     },
+    transition: 'all 0.2s ease-in-out',
   },
   tableCell: {
     borderBottom: '1px solid #3d3d3d',
-    padding: '4px 8px',
-    fontSize: '0.8rem',
+    padding: '6px 12px',
+    fontSize: '0.85rem',
+    verticalAlign: 'middle',
   },
   tableCellHeader: {
     borderBottom: '1px solid #3d3d3d',
-    padding: '8px',
-    fontSize: '0.8rem',
+    padding: '12px',
+    fontSize: '0.85rem',
     fontWeight: 'bold',
+    letterSpacing: '0.5px',
+  },
+  enhancedNameCell: {
+    borderBottom: '1px solid #3d3d3d',
+    padding: '6px 12px',
+    fontSize: '0.85rem',
+    verticalAlign: 'middle',
+    '&:hover': {
+      backgroundColor: 'rgba(255, 255, 255, 0.05)',
+      borderRadius: '4px',
+    },
   },
 };
 
@@ -60,6 +311,8 @@ const tableStyles = {
  * @param {Object} props.editingStatusByItemId - Stato di modifica degli elementi
  * @param {boolean} props.isPlayoutOperator - Se l'utente è un operatore di playout
  * @param {Array} props.visibleColumns - Array delle colonne visibili
+ * @param {Set} props.selectedItemsSet - Set degli ID elementi selezionati
+ * @param {Function} props.onItemSelectionChange - Callback per cambio selezione elemento
  * @returns {JSX.Element} - Componente React
  */
 const ScalettaTable = ({
@@ -86,7 +339,9 @@ const ScalettaTable = ({
   // isPlayoutOperator = false,
   onPlayStory,
   onStopStory,
-  visibleColumns = ['index', 'startTime', 'duration', 'location', 'name', 'file', 'notes', 'actions']
+  visibleColumns = ['index', 'startTime', 'duration', 'location', 'name', 'file', 'notes', 'actions'],
+  selectedItemsSet = new Set(),
+  onItemSelectionChange
 }) => {
   // Verifica se l'utente può modificare la scaletta
   const canEdit = userRole === 'owner' || userRole === 'editor';
@@ -100,6 +355,11 @@ const ScalettaTable = ({
         <Table stickyHeader size="small">
           <TableHead>
             <TableRow>
+              {/* Colonna checkbox selezione */}
+              <TableCell width="40px" sx={tableStyles.tableCellHeader}>
+                {/* Header vuoto per checkbox - il SelectAll è nel toolbar */}
+              </TableCell>
+
               {visibleColumns.includes('index') && (
                 <TableCell width="50px" sx={tableStyles.tableCellHeader}>#</TableCell>
               )}
@@ -134,119 +394,33 @@ const ScalettaTable = ({
           </TableHead>
           <TableBody>
             {items.map((item, index) => (
-              <TableRow
+              <ScalettaTableRow
                 key={item.id}
-                hover
-                sx={{
-                  ...tableStyles.tableRow,
-                  cursor: canEdit ? 'move' : 'pointer',
-                  backgroundColor: selectedItemIndex === index
-                    ? 'rgba(76, 175, 80, 0.3)' // Verde per l'elemento selezionato
-                    : selectedItemIndex !== -1 && index > selectedItemIndex
-                      ? 'rgba(255, 152, 0, 0.15)' // Arancione chiaro per gli elementi successivi
-                      : dragOverIndex === index
-                        ? 'rgba(25, 118, 210, 0.12)' // Blu per il drag over
-                        : 'inherit'
-                }}
-                className={dragOverIndex === index ? 'drag-over' : 'drag-item'}
-                draggable={canEdit}
-                onClick={() => {
-                  console.log("Click sulla riga della tabella, indice:", index);
-                  onSelectItem(index);
-                }}
-                onDragStart={canEdit ? (e) => onDragStart(e, index) : null}
-                onDragOver={canEdit ? (e) => onDragOver(e, index) : null}
-                onDragEnd={canEdit ? onDragEnd : null}
-                onDrop={canEdit ? (e) => onDrop(e, index) : null}
-              >
-                {visibleColumns.includes('index') && (
-                  <TableCell sx={tableStyles.tableCell}>{index + 1}</TableCell>
-                )}
-                {visibleColumns.includes('startTime') && (
-                  <TableCell sx={tableStyles.tableCell}>{item.data?.timing?.startTime || '00:00:00'}</TableCell>
-                )}
-                {visibleColumns.includes('duration') && (
-                  <TableCell sx={tableStyles.tableCell}>{item.data?.timing?.duration || '00:00:00'}</TableCell>
-                )}
-                {visibleColumns.includes('location') && (
-                  <TableCell sx={tableStyles.tableCell}>
-                    {item.data?.location ||
-                     (item.data?.casparcgConfig ?
-                      `CH${item.data?.casparcgConfig?.channel}-L${item.data?.casparcgConfig?.layer}` :
-                      'N/A')}
-                  </TableCell>
-                )}
-                {visibleColumns.includes('name') && (
-                  <TableCell sx={tableStyles.tableCell}>{item.data?.customName || 'Senza nome'}</TableCell>
-                )}
-                {visibleColumns.includes('file') && (
-                  <TableCell sx={tableStyles.tableCell}>
-                    {item.type === 'MEDIA' ? (
-                      item.data?.clip
-                    ) : item.type === 'TEMPLATE' ? (
-                      item.data?.template
-                    ) : item.type === 'STORY' ? (
-                      <Box>
-                        {item.data?.mediaDetails?.clipPath && (
-                          <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
-                            Media: {item.data.mediaDetails.clipPath.split('/').pop()}
-                          </Typography>
-                        )}
-                        {item.data?.templatesDetails && item.data.templatesDetails.length > 0 ? (
-                          item.data.templatesDetails.map((template, idx) => (
-                            <Typography key={idx} variant="body2" sx={{ fontSize: '0.8rem' }}>
-                              Template {idx + 1}: {template.templateFile.split('/').pop()}
-                            </Typography>
-                          ))
-                        ) : item.data?.templateDetails?.templateFile && (
-                          <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
-                            Template: {item.data.templateDetails.templateFile.split('/').pop()}
-                          </Typography>
-                        )}
-                      </Box>
-                    ) : 'N/A'}
-                  </TableCell>
-                )}
-                {visibleColumns.includes('notes') && (
-                  <TableCell sx={tableStyles.tableCell}>{item.data?.notes || ''}</TableCell>
-                )}
-                {visibleColumns.includes('outPoint') && (
-                  <TableCell sx={tableStyles.tableCell}>{item.data?.timing?.outPoint || '00:00:00'}</TableCell>
-                )}
-                {visibleColumns.includes('inPoint') && (
-                  <TableCell sx={tableStyles.tableCell}>{item.data?.timing?.inPoint || '00:00:00'}</TableCell>
-                )}
-                {visibleColumns.includes('actions') && (
-                  <TableCell sx={tableStyles.tableCell}>
-                  {/* Mostra l'indicatore di modifica se l'elemento è in modifica da un altro utente */}
-                  {editingStatusByItemId[item.id] && (
-                    <Tooltip title={`In modifica da ${editingStatusByItemId[item.id].userName}`}>
-                      <Badge color="warning" variant="dot">
-                        <PersonIcon fontSize="small" />
-                      </Badge>
-                    </Tooltip>
-                  )}
-
-                  {/* Utilizziamo il nuovo componente ItemActionsCell */}
-                  <ItemActionsCell
-                    item={item}
-                    canEdit={canEdit}
-                    editingStatusByItemId={editingStatusByItemId}
-                    onEditItem={onEditItem}
-                    onPlayItem={onPlayItem}
-                    onPauseItem={onPauseItem}
-                    onStopItem={onStopItem}
-                    onRemoveItem={onRemoveItem}
-                    onPlayTemplate={onPlayTemplate}
-                    onStopTemplate={onStopTemplate}
-                    onRemoveTemplate={onRemoveTemplate}
-                    onPlayStory={onPlayStory}
-                    onStopStory={onStopStory}
-                    isPlayoutOperator={true}
-                  />
-                </TableCell>
-                )}
-              </TableRow>
+                item={item}
+                index={index}
+                selectedItemIndex={selectedItemIndex}
+                dragOverIndex={dragOverIndex}
+                canEdit={canEdit}
+                editingStatusByItemId={editingStatusByItemId}
+                visibleColumns={visibleColumns}
+                selectedItemsSet={selectedItemsSet}
+                onSelectItem={onSelectItem}
+                onItemSelectionChange={onItemSelectionChange}
+                onEditItem={onEditItem}
+                onPlayItem={onPlayItem}
+                onPauseItem={onPauseItem}
+                onStopItem={onStopItem}
+                onRemoveItem={onRemoveItem}
+                onPlayTemplate={onPlayTemplate}
+                onStopTemplate={onStopTemplate}
+                onRemoveTemplate={onRemoveTemplate}
+                onPlayStory={onPlayStory}
+                onStopStory={onStopStory}
+                onDragStart={onDragStart}
+                onDragOver={onDragOver}
+                onDragEnd={onDragEnd}
+                onDrop={onDrop}
+              />
             ))}
           </TableBody>
         </Table>

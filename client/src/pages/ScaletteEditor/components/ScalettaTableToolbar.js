@@ -25,6 +25,11 @@ import ArticleIcon from '@mui/icons-material/Article';
 import SendIcon from '@mui/icons-material/Send';
 import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import PlaylistPlayIcon from '@mui/icons-material/PlaylistPlay';
+import TimelineIcon from '@mui/icons-material/Timeline';
+import TableViewIcon from '@mui/icons-material/TableView';
+import { ToggleButtonGroup, ToggleButton } from '@mui/material';
+import ViewModeToggle from './ViewModeToggle';
+import { SelectAllCheckbox, SelectionStats } from './SelectionCheckbox';
 
 /**
  * Componente per la barra degli strumenti della tabella scaletta
@@ -42,6 +47,15 @@ import PlaylistPlayIcon from '@mui/icons-material/PlaylistPlay';
  * @param {Function} props.onSendToRundown - Funzione per inviare la scaletta al rundown
  * @param {Function} props.onSendToCalendar - Funzione per inviare la scaletta al calendario settimanale
  * @param {boolean} props.isPlayoutOperator - Se l'utente è un operatore di playout
+ * @param {string} props.viewMode - Modalità di visualizzazione corrente ('table' | 'timeline')
+ * @param {Function} props.onViewModeChange - Funzione per cambiare la modalità di visualizzazione
+ * @param {string} props.tableViewMode - Modalità vista tabella ('compact' | 'detailed')
+ * @param {Function} props.onTableViewModeChange - Funzione per cambiare modalità vista tabella
+ * @param {number} props.itemCount - Numero di elementi nella scaletta
+ * @param {string} props.selectAllState - Stato selezione tutti ('none' | 'partial' | 'all')
+ * @param {Function} props.onSelectAllChange - Funzione per selezionare/deselezionare tutti
+ * @param {Object} props.selectionStats - Statistiche selezione elementi
+ * @param {boolean} props.hasSelection - Se ci sono elementi selezionati
  * @returns {JSX.Element} - Componente React
  */
 const ScalettaTableToolbar = ({
@@ -56,7 +70,16 @@ const ScalettaTableToolbar = ({
   userRole = '',
   onSendToRundown,
   onSendToCalendar,
-  isPlayoutOperator = false
+  isPlayoutOperator = false,
+  viewMode = 'table',
+  onViewModeChange,
+  tableViewMode = 'compact',
+  onTableViewModeChange,
+  itemCount = 0,
+  selectAllState = 'none',
+  onSelectAllChange,
+  selectionStats = { total: 0, byType: {}, percentage: 0 },
+  hasSelection = false
 }) => {
   // Stati per i menu
   const [addMenuAnchor, setAddMenuAnchor] = useState(null);
@@ -118,8 +141,29 @@ const ScalettaTableToolbar = ({
         bgcolor: 'background.paper',
       }}
     >
-      {/* Sezione sinistra: Pulsanti di aggiunta */}
+      {/* Sezione sinistra: Checkbox Seleziona Tutti e Pulsanti di aggiunta */}
       <Box sx={{ display: 'flex', alignItems: 'center' }}>
+        {/* Checkbox Seleziona Tutti (solo in modalità table) */}
+        {viewMode === 'table' && (
+          <Box sx={{ mr: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+            <SelectAllCheckbox
+              state={selectAllState}
+              onChange={onSelectAllChange}
+              totalItems={itemCount}
+              selectedItems={selectionStats.total}
+              showLabel={false}
+              size="small"
+            />
+            {hasSelection && (
+              <SelectionStats
+                stats={selectionStats}
+                showDetails={false}
+                variant="text"
+              />
+            )}
+          </Box>
+        )}
+
         <Button
           variant="contained"
           startIcon={<AddIcon />}
@@ -152,6 +196,41 @@ const ScalettaTableToolbar = ({
 
         <Divider orientation="vertical" flexItem sx={{ mx: 1 }} />
 
+        {/* Toggle modalità visualizzazione principale */}
+        <ToggleButtonGroup
+          value={viewMode}
+          exclusive
+          onChange={(event, newViewMode) => {
+            if (newViewMode !== null && onViewModeChange) {
+              onViewModeChange(newViewMode);
+            }
+          }}
+          size="small"
+          sx={{ mr: 2 }}
+        >
+          <ToggleButton value="table">
+            <Tooltip title="Vista Tabella/Card">
+              <TableViewIcon fontSize="small" />
+            </Tooltip>
+          </ToggleButton>
+          <ToggleButton value="timeline">
+            <Tooltip title="Vista Timeline">
+              <TimelineIcon fontSize="small" />
+            </Tooltip>
+          </ToggleButton>
+        </ToggleButtonGroup>
+
+        {/* Toggle modalità vista tabella (solo se in modalità table) */}
+        {viewMode === 'table' && (
+          <ViewModeToggle
+            value={tableViewMode}
+            onChange={onTableViewModeChange}
+            itemCount={itemCount}
+            size="small"
+            showRecommendation={true}
+          />
+        )}
+
         <TextField
           placeholder="Cerca..."
           size="small"
@@ -171,7 +250,7 @@ const ScalettaTableToolbar = ({
       {/* Sezione destra: Bottoni per inviare al rundown e al calendario, filtri e configurazione colonne */}
       <Box sx={{ display: 'flex', alignItems: 'center' }}>
         {/* Bottone per inviare al rundown */}
-        <Tooltip title="Invia al Rundown">
+        <Tooltip title={hasSelection ? `Invia ${selectionStats.total} elementi selezionati al Rundown` : "Invia al Rundown"}>
           <span>
             <Button
               variant="outlined"
@@ -181,7 +260,7 @@ const ScalettaTableToolbar = ({
               disabled={!canSendToRundown}
               sx={{ mr: 1 }}
             >
-              Rundown
+              Rundown{hasSelection ? ` (${selectionStats.total})` : ''}
             </Button>
           </span>
         </Tooltip>

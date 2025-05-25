@@ -77,6 +77,47 @@ Ecco una proposta per la struttura JSONB completa e definitiva per il campo data
     }
   },
 
+  // --- Sezione: Internal Items (Solo per tipo STORY) ---
+  // Array di elementi interni che compongono una storia complessa.
+  // Utilizzato dalla Timeline Visuale Avanzata per gestione NLE-like.
+  "internal_items": [
+    {
+      "id": "internal-001",                    // ID unico dell'elemento interno
+      "type": "MEDIA",                         // Tipo: 'MEDIA', 'TEMPLATE', 'COMMAND', 'AUDIO'
+      "name": "Video Principale",              // Nome visualizzato
+      "relative_start_time": "00:00:00:00",    // Tempo di inizio relativo alla storia (HH:MM:SS:FF)
+      "duration": "00:01:30:00",               // Durata dell'elemento (HH:MM:SS:FF)
+      "track": 1,                              // Numero traccia per visualizzazione timeline
+      "layer": 10,                             // Layer CasparCG
+      "channel": 1,                            // Canale CasparCG
+      "data": {                                // Dati specifici del tipo
+        "clipPath": "stories/main_video.mp4",
+        "inPoint": "00:00:05:00",
+        "outPoint": "00:01:25:00",
+        "loop": false
+      }
+    },
+    {
+      "id": "internal-002",
+      "type": "TEMPLATE",
+      "name": "Lower Third",
+      "relative_start_time": "00:00:10:00",
+      "duration": "00:00:15:00",
+      "track": 2,
+      "layer": 20,
+      "channel": 1,
+      "data": {
+        "templateFile": "lower_thirds/news_lt.html",
+        "cgLayer": 1,
+        "playOnLoad": true,
+        "instanceData": {
+          "title": "Breaking News",
+          "subtitle": "Aggiornamenti in tempo reale"
+        }
+      }
+    }
+  ],
+
   // --- Sezione: Metadati Aggiuntivi e di Stato (Opzionale) ---
   // Campi che potrebbero essere utili per la logica dell'applicazione.
   "uiHints": {

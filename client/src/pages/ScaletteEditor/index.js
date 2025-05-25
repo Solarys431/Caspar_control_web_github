@@ -29,10 +29,13 @@ import supabase from '../../supabaseClient';
 import useScalettaItems from './hooks/useScalettaItems';
 import usePreviewPlayer from './hooks/usePreviewPlayer';
 import useDialogs from './hooks/useDialogs';
+import useOscData from './hooks/useOscData';
+import useMultiSelection from './hooks/useMultiSelection';
 
 // Componenti
 import PreviewSection from './components/PreviewSection';
 import ScalettaTable from './components/ScalettaTable';
+import ScalettaCardView from './components/ScalettaCardView';
 import MediaDialog from './components/MediaDialog';
 import TemplateDialog from './components/TemplateDialog';
 import CollaboratorsDialog from './components/CollaboratorsDialog';
@@ -43,7 +46,9 @@ import ItemEditPanel from './components/ItemEditPanel';
 // import PlaybackControls from './components/PlaybackControls';
 import ItemContextControls from './components/ItemContextControls';
 import ExtendedControls from './components/ExtendedControls';
+import ProfessionalTimeline from './components/ProfessionalTimeline';
 import WeekDaySelectDialog from './components/WeekDaySelectDialog';
+import SendToRundownDialog from './components/SendToRundownDialog';
 
 // Stili CSS
 import './ScaletteEditor.css';
@@ -70,6 +75,8 @@ const ScaletteEditor = () => {
   const [collaboratorsDialogOpen, setCollaboratorsDialogOpen] = useState(false);
   const [storyDialogOpen, setStoryDialogOpen] = useState(false);
   const [weekDaySelectDialogOpen, setWeekDaySelectDialogOpen] = useState(false);
+  const [sendToRundownDialogOpen, setSendToRundownDialogOpen] = useState(false);
+  const [sendToRundownLoading, setSendToRundownLoading] = useState(false);
 
   // Stato per il pannello di modifica
   const [isEditPanelOpen, setIsEditPanelOpen] = useState(false);
@@ -80,14 +87,17 @@ const ScaletteEditor = () => {
   // Stato per l'altezza dell'area superiore
   const [topAreaHeight, setTopAreaHeight] = useState(300);
 
-  // Stato per il collasso dell'area superiore
-  const [isTopAreaCollapsed, setIsTopAreaCollapsed] = useState(false);
+  // Stato per la modalità di transizione (rimosso perché non utilizzato)
+  // const [transitionType, setTransitionType] = useState('CUT');
 
-  // Stato per la modalità di transizione
-  const [transitionType, setTransitionType] = useState('CUT');
+  // Stato per la modalità auto (rimosso perché non utilizzato)
+  // const [autoMode, setAutoMode] = useState(false);
 
-  // Stato per la modalità auto
-  const [autoMode, setAutoMode] = useState(false);
+  // Stato per la modalità di visualizzazione (tabella o timeline)
+  const [viewMode, setViewMode] = useState('table'); // 'table' | 'timeline'
+
+  // Stato per la modalità di visualizzazione della tabella (compact o detailed)
+  const [tableViewMode, setTableViewMode] = useState('compact'); // 'compact' | 'detailed'
 
   // Stato per i log di sistema
   const [systemLogs, setSystemLogs] = useState([]);
@@ -117,6 +127,14 @@ const ScaletteEditor = () => {
   const scalettaItems = useScalettaItems();
   const dialogs = useDialogs();
   const calendar = useCalendar();
+  const oscData = useOscData(previewChannel, 1); // Dati OSC per il playhead
+
+  // Hook per la selezione multipla
+  const multiSelection = useMultiSelection(scalettaItems.scalettaItems, {
+    onSelectionChange: (selectedItems, selectedIds) => {
+      console.log('🔄 Selezione cambiata:', { selectedItems, selectedIds });
+    }
+  });
 
   // Verifica se l'utente è un operatore di playout
   useEffect(() => {
@@ -284,18 +302,129 @@ const ScaletteEditor = () => {
   //   setIsTopAreaCollapsed(!isTopAreaCollapsed);
   // };
 
-  // Funzione per gestire il cambio di transizione
-  const handleTransitionChange = (newTransitionType) => {
-    setTransitionType(newTransitionType);
-    // Aggiungi un log di sistema
-    addSystemLog(`Transizione cambiata a: ${newTransitionType}`, 'info');
+  // Funzioni rimosse perché non utilizzate:
+  // - handleTransitionChange: gestione cambio transizione
+  // - handleToggleAutoMode: toggle modalità automatica
+
+  // Funzione per gestire il cambio di modalità di visualizzazione
+  const handleViewModeChange = (newViewMode) => {
+    setViewMode(newViewMode);
+    addSystemLog(`Vista cambiata a: ${newViewMode === 'table' ? 'Tabella' : 'Timeline'}`, 'info');
   };
 
-  // Funzione per gestire il toggle della modalità auto
-  const handleToggleAutoMode = () => {
-    setAutoMode(!autoMode);
-    // Aggiungi un log di sistema
-    addSystemLog(`Modalità AUTO ${!autoMode ? 'attivata' : 'disattivata'}`, 'info');
+  // Funzione per gestire il cambio di modalità di visualizzazione della tabella
+  const handleTableViewModeChange = (newTableViewMode) => {
+    console.log('🔄 ScaletteEditor handleTableViewModeChange:', {
+      currentMode: tableViewMode,
+      newMode: newTableViewMode
+    });
+
+    setTableViewMode(newTableViewMode);
+    addSystemLog(`Modalità tabella cambiata a: ${newTableViewMode === 'compact' ? 'Compatta' : 'Dettagliata'}`, 'info');
+
+    console.log('✅ Table view mode updated to:', newTableViewMode);
+  };
+
+  // Funzione per gestire la selezione di un elemento dalla timeline
+  const handleTimelineItemSelect = (item) => {
+    if (item) {
+      scalettaItems.setSelectedItemIndex(scalettaItems.scalettaItems.findIndex(i => i.id === item.id));
+    }
+  };
+
+  // Funzione per gestire l'aggiornamento di un elemento dalla timeline
+  const handleTimelineItemUpdate = (updateData) => {
+    if (updateData && updateData.itemId && scalettaItems && scalettaItems.scalettaItems) {
+      // Trova l'elemento da aggiornare
+      const itemIndex = scalettaItems.scalettaItems.findIndex(i => i.id === updateData.itemId);
+      if (itemIndex !== -1) {
+        // Applica gli aggiornamenti
+        scalettaItems.updateItem(updateData.itemId, updateData.updates);
+        addSystemLog(`Elemento aggiornato dalla timeline: ${updateData.itemId}`, 'info');
+      } else {
+        console.warn('Elemento non trovato per aggiornamento timeline:', updateData.itemId);
+      }
+    } else {
+      console.warn('Dati di aggiornamento timeline non validi:', updateData);
+    }
+  };
+
+  /**
+   * Funzione per gestire la riproduzione di un elemento media dalla timeline
+   * Utilizza la stessa logica di handlePlayItem ma specifica per elementi MEDIA
+   */
+  const handlePlayMedia = (item) => {
+    try {
+      if (!item || !item.data) {
+        console.error("Impossibile riprodurre il media: item o item.data non definito");
+        return;
+      }
+
+      // Verifica che sia effettivamente un elemento MEDIA
+      if (item.type !== 'MEDIA') {
+        console.error("Impossibile riprodurre: l'elemento non è di tipo MEDIA");
+        return;
+      }
+
+      // Utilizza la logica esistente di handlePlayItem
+      handlePlayItem(item);
+      addSystemLog(`Riproduzione media dalla timeline: ${item.name}`, 'info');
+    } catch (e) {
+      console.error(`Errore riproduzione media dalla timeline:`, e);
+      dialogs.setErrorMessage(`Errore riproduzione media: ${e.message}`);
+    }
+  };
+
+  /**
+   * Funzione per gestire lo stop di un elemento media dalla timeline
+   * Utilizza la stessa logica di handleStopItem ma specifica per elementi MEDIA
+   */
+  const handleStopMedia = (item) => {
+    try {
+      if (!item || !item.data) {
+        console.error("Impossibile fermare il media: item o item.data non definito");
+        return;
+      }
+
+      // Verifica che sia effettivamente un elemento MEDIA
+      if (item.type !== 'MEDIA') {
+        console.error("Impossibile fermare: l'elemento non è di tipo MEDIA");
+        return;
+      }
+
+      // Utilizza la logica esistente di handleStopItem
+      handleStopItem();
+      addSystemLog(`Media fermato dalla timeline: ${item.name}`, 'info');
+    } catch (e) {
+      console.error(`Errore stop media dalla timeline:`, e);
+      dialogs.setErrorMessage(`Errore stop media: ${e.message}`);
+    }
+  };
+
+  // Funzione per gestire la riproduzione di un elemento dalla timeline
+  const handleTimelineItemPlay = (item) => {
+    if (item) {
+      if (item.type === 'MEDIA') {
+        handlePlayMedia(item);
+      } else if (item.type === 'TEMPLATE') {
+        handlePlayTemplate(item);
+      } else if (item.type === 'STORY') {
+        handlePlayStory(item);
+      }
+    }
+  };
+
+  // Funzione per gestire lo stop di un elemento dalla timeline
+  const handleTimelineItemStop = (item) => {
+    if (item) {
+      if (item.type === 'MEDIA') {
+        handleStopMedia(item);
+      } else if (item.type === 'TEMPLATE') {
+        handleStopTemplate(item);
+      } else if (item.type === 'STORY') {
+        handleStopStory(item);
+      }
+    }
   };
 
   // Funzione per eseguire il take
@@ -650,7 +779,7 @@ const ScaletteEditor = () => {
     }
   };
 
-  // Funzione per inviare la scaletta al rundown
+  // Funzione per aprire il dialogo di invio al rundown
   const handleSendToRundown = () => {
     // Verifica i permessi dell'utente
     const canSend = canUserSendToRundown(scalettaItems.userRoleForScaletta, isPlayoutOperator);
@@ -666,12 +795,37 @@ const ScaletteEditor = () => {
       return;
     }
 
+    // Determina quali elementi inviare
+    const itemsToSend = multiSelection.hasSelection
+      ? multiSelection.getSelectedItems()
+      : scalettaItems.scalettaItems;
+
+    if (itemsToSend.length === 0) {
+      dialogs.setErrorMessage("Nessun elemento da inviare al rundown.");
+      return;
+    }
+
+    // Apri il dialogo di conferma
+    setSendToRundownDialogOpen(true);
+  };
+
+  // Funzione per confermare l'invio al rundown
+  const handleConfirmSendToRundown = async (confirmData) => {
+    const { items, options } = confirmData;
+
+    setSendToRundownLoading(true);
+
     try {
       // Contatore per tenere traccia degli elementi inviati con successo
       let successCount = 0;
 
+      // Converti gli elementi al canale 1 se richiesto
+      const itemsToProcess = options.convertChannels
+        ? convertItemsToPlayoutChannel(items, 1)
+        : items;
+
       // Invia ogni elemento al rundown
-      scalettaItems.scalettaItems.forEach(item => {
+      itemsToProcess.forEach(item => {
         if (item.type === 'MEDIA') {
           // Estrai i dati dal campo data JSONB
           const { customName, originalName, timing, casparcgConfig, mediaDetails } = item.data;
@@ -804,13 +958,26 @@ const ScaletteEditor = () => {
 
       // Mostra un messaggio di successo
       if (successCount > 0) {
-        alert(`${successCount} elementi inviati al rundown con successo!`);
+        const message = multiSelection.hasSelection
+          ? `${successCount} elementi selezionati inviati al rundown con successo!`
+          : `${successCount} elementi inviati al rundown con successo!`;
+        alert(message);
+
+        // Pulisci la selezione dopo l'invio se c'era una selezione
+        if (multiSelection.hasSelection) {
+          multiSelection.clearSelection();
+        }
+
+        // Chiudi il dialogo
+        setSendToRundownDialogOpen(false);
       } else {
         dialogs.setErrorMessage("Nessun elemento valido da inviare al rundown.");
       }
     } catch (error) {
       console.error("Errore durante l'invio al rundown:", error);
       dialogs.setErrorMessage(`Errore durante l'invio al rundown: ${error.message}`);
+    } finally {
+      setSendToRundownLoading(false);
     }
   };
 
@@ -850,6 +1017,196 @@ const ScaletteEditor = () => {
 
 
 
+  /**
+   * Converte tutti gli item della scaletta per l'invio al calendario
+   * Questa funzione:
+   * 1. Clona profondamente ogni item per evitare modifiche alla configurazione locale
+   * 2. Converte tutti i canali CasparCG al canale di playout specificato
+   * 3. Mappa i campi timing dalla struttura JSONB al formato flat atteso dal calendario
+   *
+   * @param {Array} items - Array degli item della scaletta
+   * @param {number} targetChannel - Canale CasparCG di destinazione (default: 1 per playout)
+   * @returns {Array} - Array degli item modificati per il calendario
+   */
+  const convertItemsToPlayoutChannel = (items, targetChannel = 1) => {
+    if (!Array.isArray(items)) {
+      console.warn('convertItemsToPlayoutChannel: items non è un array valido');
+      return [];
+    }
+
+    return items.map(item => {
+      try {
+        // Clone profondo dell'item per evitare modifiche alla configurazione locale
+        const clonedItem = JSON.parse(JSON.stringify(item));
+
+        // Funzione helper per aggiornare ricorsivamente tutti i canali in un oggetto
+        const updateChannelsRecursively = (obj, channel) => {
+          if (!obj || typeof obj !== 'object') return;
+
+          // Se l'oggetto ha una proprietà channel, aggiornala
+          if (obj.hasOwnProperty('channel')) {
+            obj.channel = channel;
+          }
+
+          // Se l'oggetto ha casparcgConfig con channel, aggiornalo
+          if (obj.casparcgConfig && obj.casparcgConfig.hasOwnProperty('channel')) {
+            obj.casparcgConfig.channel = channel;
+          }
+
+          // Ricorsione per oggetti annidati
+          Object.values(obj).forEach(value => {
+            if (typeof value === 'object' && value !== null) {
+              updateChannelsRecursively(value, channel);
+            }
+          });
+        };
+
+        // Applica l'aggiornamento ricorsivo a tutto l'oggetto data
+        if (clonedItem.data) {
+          updateChannelsRecursively(clonedItem.data, targetChannel);
+        }
+
+        // Mappa i campi timing dalla struttura JSONB al formato flat per il calendario
+        if (clonedItem.data && clonedItem.data.timing) {
+          const timing = clonedItem.data.timing;
+
+          // Aggiungi i campi timing al livello principale del data per compatibilità con il calendario
+          clonedItem.data.startTime = timing.startTime || clonedItem.data.startTime || '00:00:00';
+          clonedItem.data.duration = timing.duration || clonedItem.data.duration || '00:01:00';
+          clonedItem.data.inPoint = timing.inPoint || clonedItem.data.inPoint || '00:00:00:00';
+          clonedItem.data.outPoint = timing.outPoint || clonedItem.data.outPoint || '00:00:00:00';
+        }
+
+        // Assicurati che i campi essenziali per il calendario siano sempre presenti
+        if (clonedItem.data) {
+          clonedItem.data.startTime = clonedItem.data.startTime || '00:00:00';
+          clonedItem.data.duration = clonedItem.data.duration || '00:01:00';
+          clonedItem.data.customName = clonedItem.data.customName || clonedItem.name || 'Elemento senza nome';
+
+          // Per elementi MEDIA, assicurati che clip sia presente
+          if (clonedItem.type === 'MEDIA' && clonedItem.data.mediaDetails?.clipPath) {
+            clonedItem.data.clip = clonedItem.data.mediaDetails.clipPath;
+          }
+
+          // Per elementi TEMPLATE, assicurati che template sia presente
+          if (clonedItem.type === 'TEMPLATE' && clonedItem.data.templateDetails?.templateFile) {
+            clonedItem.data.template = clonedItem.data.templateDetails.templateFile;
+          }
+        }
+
+        return clonedItem;
+      } catch (error) {
+        console.error(`Errore nella conversione dell'item ${item.id || 'sconosciuto'}:`, error);
+        // Ritorna l'item originale in caso di errore
+        return item;
+      }
+    });
+  };
+
+  /**
+   * Funzione di test per verificare la conversione dei canali e dei campi timing
+   * Utile per debugging e verifica della funzionalità
+   *
+   * @param {Array} originalItems - Item originali
+   * @param {Array} convertedItems - Item convertiti
+   * @param {number} expectedChannel - Canale atteso dopo la conversione
+   */
+  const testChannelConversion = (originalItems, convertedItems, expectedChannel = 1) => {
+    console.group('🔍 Test Conversione per Calendario');
+
+    let totalChannelsFound = 0;
+    let totalChannelsConverted = 0;
+    let totalTimingFieldsMapped = 0;
+    let totalTimingFieldsExpected = 0;
+
+    convertedItems.forEach((item, index) => {
+      const originalItem = originalItems[index];
+      console.log(`\n📋 Item ${index + 1}: ${item.name} (${item.type})`);
+
+      // Verifica conversione canali
+      const checkChannels = (obj, path = '') => {
+        if (!obj || typeof obj !== 'object') return;
+
+        if (obj.hasOwnProperty('channel')) {
+          totalChannelsFound++;
+          const isConverted = obj.channel === expectedChannel;
+          if (isConverted) totalChannelsConverted++;
+
+          console.log(`  ${isConverted ? '✅' : '❌'} ${path}channel: ${obj.channel} ${isConverted ? '(convertito)' : '(NON convertito)'}`);
+        }
+
+        Object.entries(obj).forEach(([key, value]) => {
+          if (typeof value === 'object' && value !== null) {
+            checkChannels(value, `${path}${key}.`);
+          }
+        });
+      };
+
+      // Verifica mapping campi timing
+      const checkTimingMapping = () => {
+        const timingFields = ['startTime', 'duration', 'inPoint', 'outPoint'];
+
+        timingFields.forEach(field => {
+          // Se l'item originale ha il campo nella struttura timing
+          if (originalItem.data?.timing?.[field]) {
+            totalTimingFieldsExpected++;
+
+            // Verifica che sia stato mappato al livello principale
+            if (item.data?.[field]) {
+              totalTimingFieldsMapped++;
+              console.log(`  ✅ timing.${field} → data.${field}: ${item.data[field]} (mappato)`);
+            } else {
+              console.log(`  ❌ timing.${field} NON mappato a data.${field}`);
+            }
+          }
+        });
+      };
+
+      if (item.data) {
+        checkChannels(item.data);
+        checkTimingMapping();
+
+        // Verifica campi essenziali per il calendario
+        const essentialFields = ['startTime', 'duration', 'customName'];
+        essentialFields.forEach(field => {
+          if (item.data[field]) {
+            console.log(`  ✅ Campo essenziale ${field}: ${item.data[field]}`);
+          } else {
+            console.log(`  ⚠️ Campo essenziale ${field} mancante`);
+          }
+        });
+
+        // Verifica campi specifici per tipo
+        if (item.type === 'MEDIA' && item.data.clip) {
+          console.log(`  ✅ Campo clip per MEDIA: ${item.data.clip}`);
+        }
+        if (item.type === 'TEMPLATE' && item.data.template) {
+          console.log(`  ✅ Campo template per TEMPLATE: ${item.data.template}`);
+        }
+      }
+    });
+
+    console.log(`\n📊 Riepilogo conversione:`);
+    console.log(`   - Canali trovati: ${totalChannelsFound}`);
+    console.log(`   - Canali convertiti: ${totalChannelsConverted}`);
+    console.log(`   - Campi timing mappati: ${totalTimingFieldsMapped}/${totalTimingFieldsExpected}`);
+    console.log(`   - Successo canali: ${totalChannelsFound === totalChannelsConverted ? '✅' : '❌'}`);
+    console.log(`   - Successo timing: ${totalTimingFieldsExpected === 0 || totalTimingFieldsMapped === totalTimingFieldsExpected ? '✅' : '❌'}`);
+
+    console.groupEnd();
+
+    return {
+      totalChannelsFound,
+      totalChannelsConverted,
+      totalTimingFieldsMapped,
+      totalTimingFieldsExpected,
+      channelsSuccess: totalChannelsFound === totalChannelsConverted,
+      timingSuccess: totalTimingFieldsExpected === 0 || totalTimingFieldsMapped === totalTimingFieldsExpected,
+      success: (totalChannelsFound === totalChannelsConverted) &&
+               (totalTimingFieldsExpected === 0 || totalTimingFieldsMapped === totalTimingFieldsExpected)
+    };
+  };
+
   // Funzione per gestire la conferma dell'invio al calendario
   const handleConfirmSendToCalendar = (selectedDay, startTime) => {
     try {
@@ -863,14 +1220,36 @@ const ScaletteEditor = () => {
       // Crea un ID univoco per il rundown
       const rundownId = uuidv4();
 
-      // Prepara i dati del rundown
+      // Converti tutti gli item al canale di playout (1) prima dell'invio al calendario
+      // Questo assicura che tutti gli elementi utilizzino il canale di messa in onda
+      // senza modificare la configurazione locale dell'editor (che continua a usare il canale 3 per preview)
+      const playoutItems = convertItemsToPlayoutChannel(scalettaItems.scalettaItems, 1);
+
+      // Esegui il test di conversione per verificare canali e mapping timing
+      const conversionTest = testChannelConversion(scalettaItems.scalettaItems, playoutItems, 1);
+
+      if (conversionTest.success) {
+        addSystemLog(`✅ Conversione completata: ${conversionTest.totalChannelsConverted}/${conversionTest.totalChannelsFound} canali → canale 1, ${conversionTest.totalTimingFieldsMapped}/${conversionTest.totalTimingFieldsExpected} campi timing mappati`, 'success');
+      } else {
+        let message = '⚠️ Conversione parziale: ';
+        if (!conversionTest.channelsSuccess) {
+          message += `${conversionTest.totalChannelsConverted}/${conversionTest.totalChannelsFound} canali convertiti`;
+        }
+        if (!conversionTest.timingSuccess) {
+          if (!conversionTest.channelsSuccess) message += ', ';
+          message += `${conversionTest.totalTimingFieldsMapped}/${conversionTest.totalTimingFieldsExpected} campi timing mappati`;
+        }
+        addSystemLog(message, 'warning');
+      }
+
+      // Prepara i dati del rundown con gli item convertiti per il playout
       const rundownData = {
         id: rundownId,
         name: scalettaItems.scalettaName,
         type: 'RUNDOWN',
         startTime: startTime,
         duration: calculateTotalDuration(),
-        items: scalettaItems.scalettaItems.map(item => ({
+        items: playoutItems.map(item => ({
           id: item.id,
           type: item.type,
           name: item.name,
@@ -1724,6 +2103,15 @@ const ScaletteEditor = () => {
             onSendToRundown={handleSendToRundown}
             onSendToCalendar={handleSendToCalendar}
             isPlayoutOperator={isPlayoutOperator}
+            viewMode={viewMode}
+            onViewModeChange={handleViewModeChange}
+            tableViewMode={tableViewMode}
+            onTableViewModeChange={handleTableViewModeChange}
+            itemCount={scalettaItems.scalettaItems?.length || 0}
+            selectAllState={multiSelection.selectAllState}
+            onSelectAllChange={multiSelection.toggleSelectAll}
+            selectionStats={multiSelection.getSelectionStats()}
+            hasSelection={multiSelection.hasSelection}
           />
 
           {/* Messaggio di errore */}
@@ -1737,44 +2125,83 @@ const ScaletteEditor = () => {
             </Alert>
           )}
 
-          {/* Tabella */}
+          {/* Vista principale: Tabella/Card o Timeline */}
           <Box sx={{ flexGrow: 1, overflow: 'auto', px: 1, pb: 1 }}>
-            <Paper elevation={1} sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-              <ScalettaTable
+            {viewMode === 'table' ? (
+              tableViewMode === 'compact' ? (
+                <Paper elevation={1} sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                  <ScalettaTable
+                    items={searchTerm.trim() ? filteredItems : scalettaItems.scalettaItems}
+                    selectedItemIndex={scalettaItems.selectedItemIndex}
+                    dragOverIndex={scalettaItems.dragOverIndex}
+                    onSelectItem={scalettaItems.setSelectedItemIndex}
+                    onEditItem={handleOpenEditPanel}
+                    onPlayItem={handlePlayItem}
+                    onPauseItem={handlePauseItem}
+                    onStopItem={handleStopItem}
+                    onRemoveItem={(itemId) => {
+                      console.log("onRemoveItem chiamata con ID:", itemId);
+                      if (scalettaItems && typeof scalettaItems.removeItem === 'function') {
+                        scalettaItems.removeItem(itemId);
+                      } else {
+                        console.error("scalettaItems.removeItem non è una funzione valida!");
+                        console.log("scalettaItems:", scalettaItems);
+                      }
+                    }}
+                    onPlayTemplate={handlePlayTemplate}
+                    onStopTemplate={handleStopTemplate}
+                    onRemoveTemplate={handleRemoveTemplate}
+                    onDragStart={scalettaItems.handleDragStart}
+                    onDragOver={scalettaItems.handleDragOver}
+                    onDragEnd={scalettaItems.handleDragEnd}
+                    onDrop={scalettaItems.handleDrop}
+                    onPlaySelected={handlePlaySelected}
+                    onSendToRundown={handleSendToRundown}
+                    userRole={scalettaItems.userRoleForScaletta}
+                    editingStatusByItemId={scalettaItems.editingStatusByItemId}
+                    isPlayoutOperator={isPlayoutOperator}
+                    onPlayStory={handlePlayStory}
+                    onStopStory={handleStopStory}
+                    visibleColumns={visibleColumns}
+                    selectedItemsSet={multiSelection.selectedItemsSet}
+                    onItemSelectionChange={multiSelection.toggleItemSelection}
+                  />
+                </Paper>
+              ) : (
+                <ScalettaCardView
+                  items={searchTerm.trim() ? filteredItems : scalettaItems.scalettaItems}
+                  selectedItemIndex={scalettaItems.selectedItemIndex}
+                  onSelectItem={scalettaItems.setSelectedItemIndex}
+                  onEditItem={handleOpenEditPanel}
+                  onPlayItem={handlePlayItem}
+                  onRemoveItem={(itemId) => {
+                    console.log("onRemoveItem chiamata con ID:", itemId);
+                    if (scalettaItems && typeof scalettaItems.removeItem === 'function') {
+                      scalettaItems.removeItem(itemId);
+                    } else {
+                      console.error("scalettaItems.removeItem non è una funzione valida!");
+                      console.log("scalettaItems:", scalettaItems);
+                    }
+                  }}
+                  editingStatusByItemId={scalettaItems.editingStatusByItemId}
+                  canEdit={scalettaItems.userRoleForScaletta === 'owner' || scalettaItems.userRoleForScaletta === 'editor'}
+                  selectedItemsSet={multiSelection.selectedItemsSet}
+                  onItemSelectionChange={multiSelection.toggleItemSelection}
+                />
+              )
+            ) : (
+              <ProfessionalTimeline
                 items={searchTerm.trim() ? filteredItems : scalettaItems.scalettaItems}
-                selectedItemIndex={scalettaItems.selectedItemIndex}
-                dragOverIndex={scalettaItems.dragOverIndex}
-                onSelectItem={scalettaItems.setSelectedItemIndex}
-                onEditItem={handleOpenEditPanel}
-                onPlayItem={handlePlayItem}
-                onPauseItem={handlePauseItem}
-                onStopItem={handleStopItem}
-                onRemoveItem={(itemId) => {
-                  console.log("onRemoveItem chiamata con ID:", itemId);
-                  if (scalettaItems && typeof scalettaItems.removeItem === 'function') {
-                    scalettaItems.removeItem(itemId);
-                  } else {
-                    console.error("scalettaItems.removeItem non è una funzione valida!");
-                    console.log("scalettaItems:", scalettaItems);
-                  }
-                }}
-                onPlayTemplate={handlePlayTemplate}
-                onStopTemplate={handleStopTemplate}
-                onRemoveTemplate={handleRemoveTemplate}
-                onDragStart={scalettaItems.handleDragStart}
-                onDragOver={scalettaItems.handleDragOver}
-                onDragEnd={scalettaItems.handleDragEnd}
-                onDrop={scalettaItems.handleDrop}
-                onPlaySelected={handlePlaySelected}
-                onSendToRundown={handleSendToRundown}
-                userRole={scalettaItems.userRoleForScaletta}
-                editingStatusByItemId={scalettaItems.editingStatusByItemId}
-                isPlayoutOperator={isPlayoutOperator}
-                onPlayStory={handlePlayStory}
-                onStopStory={handleStopStory}
-                visibleColumns={visibleColumns}
+                selectedItem={scalettaItems.selectedItemIndex !== -1 ? scalettaItems.scalettaItems[scalettaItems.selectedItemIndex] : null}
+                onItemSelect={handleTimelineItemSelect}
+                onItemUpdate={handleTimelineItemUpdate}
+                onItemPlay={handleTimelineItemPlay}
+                onItemStop={handleTimelineItemStop}
+                oscData={oscData}
+                previewChannel={previewPlayer.previewChannel}
+                previewLayer={previewPlayer.previewLayer}
               />
-            </Paper>
+            )}
           </Box>
         </Box>
 
@@ -1843,6 +2270,16 @@ const ScaletteEditor = () => {
         onClose={() => setWeekDaySelectDialogOpen(false)}
         onConfirm={handleConfirmSendToCalendar}
         scalettaName={scalettaItems.scalettaName}
+      />
+
+      {/* Dialog per l'invio selettivo al rundown */}
+      <SendToRundownDialog
+        open={sendToRundownDialogOpen}
+        onClose={() => setSendToRundownDialogOpen(false)}
+        selectedItems={multiSelection.hasSelection ? multiSelection.getSelectedItems() : scalettaItems.scalettaItems}
+        existingRundownItems={rundownContext?.items || []}
+        onConfirm={handleConfirmSendToRundown}
+        loading={sendToRundownLoading}
       />
 
       {/* Menu delle impostazioni */}
