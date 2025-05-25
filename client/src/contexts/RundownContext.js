@@ -188,6 +188,55 @@ export const RundownProvider = ({ children }) => {
     return newItem;
   }, [addLog]);
 
+  // Funzione per aggiungere elementi STORY completi al rundown
+  const addStory = useCallback((storyData) => {
+    const newItem = {
+      id: uuidv4(),
+      type: 'STORY',
+      name: storyData.customName || storyData.name || 'Storia Sconosciuta',
+      data: {
+        customName: storyData.customName || storyData.name || '',
+        originalName: storyData.name || '',
+        content: storyData.content || '',
+        channel: storyData.channel || 1,
+        layer: storyData.layer || 10,
+        startTime: storyData.startTime || '00:00:00',
+        duration: storyData.duration || '00:00:10',
+        location: storyData.location || `CH${storyData.channel || 1}-L${storyData.layer || 10}`,
+        notes: storyData.notes || '',
+        // Mantieni tutti i dettagli originali della storia
+        mediaDetails: storyData.mediaDetails || null,
+        templateDetails: storyData.templateDetails || null,
+        templatesDetails: storyData.templatesDetails || null,
+        // Configurazione CasparCG
+        casparcgConfig: {
+          channel: storyData.channel || 1,
+          layer: storyData.layer || 10
+        },
+        // Timing
+        timing: {
+          startTime: storyData.startTime || '00:00:00',
+          duration: storyData.duration || '00:00:10',
+          inPoint: '00:00:00:00',
+          outPoint: '00:00:00:00'
+        },
+        // Dati completi per compatibilità
+        ...(storyData.data || {}),
+        // Metadati
+        notificationSent: false,
+        errorCount: 0,
+        lastError: null,
+        lastPlayTime: null
+      },
+      isPlaying: false,
+      playingStartTime: null,
+    };
+
+    setItems(prevItems => [...prevItems, newItem].sort((a, b) => (a.data.startTime || "0").localeCompare(b.data.startTime || "0")));
+    if (typeof addLog === 'function') addLog(`Storia aggiunta: ${newItem.name}`);
+    return newItem;
+  }, [addLog]);
+
   const removeItem = useCallback((itemId) => {
     setItems(prevItems => prevItems.filter(item => item.id !== itemId));
     setPlayingItems(prev => prev.filter(id => id !== itemId));
@@ -965,7 +1014,7 @@ export const RundownProvider = ({ children }) => {
     playingItems, currentTime, scheduledPlayback, dayStartTime, timeIndicatorPosition,
     nextItemPrepared, // Aggiungiamo lo stato del precaricamento
     setItems, setRundownName, setAutoPlay: handleAutoPlayChange,
-    addMedia, addTemplate, removeItem, updateItem, moveItem,
+    addMedia, addTemplate, addStory, removeItem, updateItem, moveItem,
     playItem, stopItem, removeTemplate, updateTemplate,
     prepareNextItem, // Aggiungiamo la funzione di precaricamento
     playAll, stopAll, saveRundown, loadRundown, clearRundown,

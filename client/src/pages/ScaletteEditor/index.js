@@ -781,16 +781,21 @@ const ScaletteEditor = () => {
 
   // Funzione per aprire il dialogo di invio al rundown
   const handleSendToRundown = () => {
+    console.group('🎯 DEBUG: Apertura Dialogo Invio Rundown');
+
     // Verifica i permessi dell'utente
     const canSend = canUserSendToRundown(scalettaItems.userRoleForScaletta, isPlayoutOperator);
 
     if (!canSend) {
+      console.log('❌ Permessi insufficienti');
+      console.groupEnd();
       dialogs.setErrorMessage("Non hai i permessi per inviare la scaletta al rundown. Devi essere il proprietario, un operatore di playout designato, o avere il ruolo 'playout_operator'.");
       return;
     }
 
     if (!rundownContext || typeof rundownContext.addMedia !== 'function' || typeof rundownContext.addTemplate !== 'function') {
-      console.error("Le funzioni addMedia o addTemplate non sono disponibili da useRundown.");
+      console.error("❌ Le funzioni addMedia o addTemplate non sono disponibili da useRundown.");
+      console.groupEnd();
       dialogs.setErrorMessage("Errore: le funzioni per inviare al rundown non sono disponibili.");
       return;
     }
@@ -800,10 +805,28 @@ const ScaletteEditor = () => {
       ? multiSelection.getSelectedItems()
       : scalettaItems.scalettaItems;
 
+    console.log('📋 Stato selezione:', {
+      hasSelection: multiSelection.hasSelection,
+      selectedCount: multiSelection.selectedCount,
+      totalItems: scalettaItems.scalettaItems.length,
+      itemsToSend: itemsToSend.length
+    });
+
+    console.log('📝 Elementi da inviare:', itemsToSend.map(item => ({
+      id: item.id,
+      type: item.type,
+      name: item.data?.customName || item.name
+    })));
+
     if (itemsToSend.length === 0) {
+      console.log('❌ Nessun elemento da inviare');
+      console.groupEnd();
       dialogs.setErrorMessage("Nessun elemento da inviare al rundown.");
       return;
     }
+
+    console.log('✅ Apertura dialogo di conferma');
+    console.groupEnd();
 
     // Apri il dialogo di conferma
     setSendToRundownDialogOpen(true);
@@ -813,19 +836,40 @@ const ScaletteEditor = () => {
   const handleConfirmSendToRundown = async (confirmData) => {
     const { items, options } = confirmData;
 
+    console.group('🚀 DEBUG: Invio al Rundown');
+    console.log('📋 Elementi ricevuti:', items.length);
+    console.log('⚙️ Opzioni:', options);
+    console.log('📝 Lista elementi:', items.map(item => ({ id: item.id, type: item.type, name: item.data?.customName || item.name })));
+
     setSendToRundownLoading(true);
 
     try {
+      // Verifica unicità degli elementi per evitare duplicazioni
+      const uniqueItems = items.filter((item, index, self) =>
+        index === self.findIndex(i => i.id === item.id)
+      );
+
+      if (uniqueItems.length !== items.length) {
+        console.warn(`⚠️ DUPLICAZIONE RILEVATA: ${items.length} elementi ricevuti, ${uniqueItems.length} unici`);
+      }
+
       // Contatore per tenere traccia degli elementi inviati con successo
       let successCount = 0;
 
       // Converti gli elementi al canale 1 se richiesto
       const itemsToProcess = options.convertChannels
-        ? convertItemsToPlayoutChannel(items, 1)
-        : items;
+        ? convertItemsToPlayoutChannel(uniqueItems, 1)
+        : uniqueItems;
+
+      console.log(`🔄 Elementi da processare: ${itemsToProcess.length}`);
 
       // Invia ogni elemento al rundown
-      itemsToProcess.forEach(item => {
+      itemsToProcess.forEach((item, index) => {
+        console.log(`\n📦 Processando elemento ${index + 1}/${itemsToProcess.length}:`, {
+          id: item.id,
+          type: item.type,
+          name: item.data?.customName || item.name
+        });
         if (item.type === 'MEDIA') {
           // Estrai i dati dal campo data JSONB
           const { customName, originalName, timing, casparcgConfig, mediaDetails } = item.data;
@@ -873,88 +917,127 @@ const ScaletteEditor = () => {
           rundownContext.addTemplate(templateData);
           successCount++;
         } else if (item.type === 'STORY') {
-          // Per le storie, verifichiamo se hanno un media o template associati
+          console.log('📖 Processando elemento STORY:', item.data?.customName || item.name);
+
+          // CORREZIONE CRITICA: Inviamo l'elemento STORY completo invece di separare i componenti
+          // Questo mantiene la struttura originale e evita lo scorporamento
+
+          // Verifica se la storia ha contenuti da inviare
           const { customName, originalName, timing, casparcgConfig, mediaDetails, templateDetails, templatesDetails } = item.data;
+          const hasMedia = mediaDetails && mediaDetails.clipPath;
+          const hasTemplates = (templatesDetails && templatesDetails.length > 0) || (templateDetails && templateDetails.templateFile);
 
-          // Se la storia ha un media associato, lo inviamo al rundown
-          if (mediaDetails && mediaDetails.clipPath) {
-            const mediaData = {
-              clip: mediaDetails.clipPath,
-              channel: casparcgConfig.channel || 1,
-              layer: casparcgConfig.layer || 10,
-              customName: customName || originalName,
-              startTime: timing.startTime || '00:00:00',
-              duration: timing.duration || '00:00:00',
-              inPoint: timing.inPoint || '00:00:00:00',
-              outPoint: timing.outPoint || '00:00:00:00',
-              location: `CH${casparcgConfig.channel}-L${casparcgConfig.layer}`,
-              notes: item.data.notes || '',
-              loop: mediaDetails.loop || false,
-              autoNext: mediaDetails.autoNext || false
-            };
+          if (hasMedia || hasTemplates) {
+            // Verifica se il rundown supporta elementi STORY completi
+            if (typeof rundownContext.addStory === 'function') {
+              // METODO PREFERITO: Invia come elemento STORY completo
+              const storyData = {
+                type: 'STORY',
+                customName: customName || originalName,
+                startTime: timing.startTime || '00:00:00',
+                duration: timing.duration || '00:00:10',
+                channel: casparcgConfig.channel || 1,
+                layer: casparcgConfig.layer || 10,
+                location: `CH${casparcgConfig.channel || 1}-L${casparcgConfig.layer || 10}`,
+                notes: item.data.notes || '',
+                content: item.data.content || '',
+                // Mantieni tutti i dettagli originali
+                mediaDetails: mediaDetails,
+                templateDetails: templateDetails,
+                templatesDetails: templatesDetails,
+                // Dati completi per compatibilità
+                data: { ...item.data }
+              };
 
-            console.log("Invio media della storia al rundown:", mediaData);
-            rundownContext.addMedia(mediaData);
-            successCount++;
-          }
+              console.log('✅ Invio STORY completa al rundown:', storyData);
+              rundownContext.addStory(storyData);
+              successCount++;
+            } else {
+              // FALLBACK: Se il rundown non supporta STORY, invia i componenti separatamente
+              // ma con logging per indicare che è un fallback
+              console.warn('⚠️ FALLBACK: rundown non supporta addStory, invio componenti separatamente');
 
-          // Se la storia ha template multipli (nuovo formato), li inviamo tutti al rundown
-          if (templatesDetails && templatesDetails.length > 0) {
-            templatesDetails.forEach((templateDetail, index) => {
-              if (templateDetail.templateFile) {
-                // Usa il layer configurato dall'utente se presente
-                const configuredLayer = templateDetail.casparcgConfig?.layer;
-                const layerToUse = configuredLayer || 20;
-
-                const templateData = {
-                  template: templateDetail.templateFile,
-                  channel: templateDetail.casparcgConfig?.channel || casparcgConfig.channel || 1,
-                  layer: layerToUse,
-                  cgLayer: templateDetail.casparcgConfig?.cgLayer || 1,
-                  playOnLoad: templateDetail.casparcgConfig?.playOnLoad !== undefined ? templateDetail.casparcgConfig.playOnLoad : true,
-                  data: templateDetail.instanceData || {},
-                  customName: `${customName || originalName} - Template ${index + 1}`,
+              // Invia il media se presente
+              if (hasMedia) {
+                const mediaData = {
+                  clip: mediaDetails.clipPath,
+                  channel: casparcgConfig.channel || 1,
+                  layer: casparcgConfig.layer || 10,
+                  customName: `${customName || originalName} (Media)`,
                   startTime: timing.startTime || '00:00:00',
-                  duration: timing.duration || '00:00:10',
-                  location: `CH${templateDetail.casparcgConfig?.channel || casparcgConfig.channel || 1}-L${layerToUse}`,
-                  notes: item.data.notes || '',
-                  autoRemove: templateDetail.autoRemove || false
+                  duration: timing.duration || '00:00:00',
+                  inPoint: timing.inPoint || '00:00:00:00',
+                  outPoint: timing.outPoint || '00:00:00:00',
+                  location: `CH${casparcgConfig.channel}-L${casparcgConfig.layer}`,
+                  notes: `${item.data.notes || ''} [Da STORY: ${customName || originalName}]`,
+                  loop: mediaDetails.loop || false,
+                  autoNext: mediaDetails.autoNext || false
                 };
 
-                console.log(`Invio template ${index + 1} della storia al rundown:`, templateData);
+                console.log('📹 Invio media della storia (fallback):', mediaData);
+                rundownContext.addMedia(mediaData);
+                successCount++;
+              }
+
+              // Invia i template come gruppo unico se possibile
+              if (templatesDetails && templatesDetails.length > 0) {
+                // Crea un singolo elemento template che rappresenta il gruppo
+                const groupTemplateData = {
+                  template: 'STORY_TEMPLATE_GROUP', // Identificatore speciale
+                  channel: casparcgConfig.channel || 1,
+                  layer: casparcgConfig.layer || 20,
+                  cgLayer: 1,
+                  playOnLoad: true,
+                  data: {
+                    storyName: customName || originalName,
+                    templates: templatesDetails,
+                    originalStoryId: item.id
+                  },
+                  customName: `${customName || originalName} (Templates)`,
+                  startTime: timing.startTime || '00:00:00',
+                  duration: timing.duration || '00:00:10',
+                  location: `CH${casparcgConfig.channel || 1}-L${casparcgConfig.layer || 20}`,
+                  notes: `${item.data.notes || ''} [Template Group da STORY: ${customName || originalName}]`,
+                  autoRemove: false
+                };
+
+                console.log('🎨 Invio gruppo template della storia (fallback):', groupTemplateData);
+                rundownContext.addTemplate(groupTemplateData);
+                successCount++;
+              } else if (templateDetails && templateDetails.templateFile) {
+                // Template singolo (vecchio formato)
+                const templateData = {
+                  template: templateDetails.templateFile,
+                  channel: casparcgConfig.channel || 1,
+                  layer: casparcgConfig.layer || 20,
+                  cgLayer: templateDetails.casparcgConfig?.cgLayer || 1,
+                  playOnLoad: templateDetails.casparcgConfig?.playOnLoad !== undefined ? templateDetails.casparcgConfig.playOnLoad : true,
+                  data: templateDetails.instanceData || {},
+                  customName: `${customName || originalName} (Template)`,
+                  startTime: timing.startTime || '00:00:00',
+                  duration: timing.duration || '00:00:10',
+                  location: `CH${casparcgConfig.channel}-L${casparcgConfig.layer}`,
+                  notes: `${item.data.notes || ''} [Da STORY: ${customName || originalName}]`,
+                  autoRemove: templateDetails.autoRemove || false
+                };
+
+                console.log('🎨 Invio template della storia (fallback):', templateData);
                 rundownContext.addTemplate(templateData);
                 successCount++;
               }
-            });
-          }
-          // Se la storia ha un template associato (vecchio formato), lo inviamo al rundown
-          else if (templateDetails && templateDetails.templateFile) {
-            const templateData = {
-              template: templateDetails.templateFile,
-              channel: casparcgConfig.channel || 1,
-              layer: casparcgConfig.layer || 20,
-              cgLayer: templateDetails.casparcgConfig?.cgLayer || 1,
-              playOnLoad: templateDetails.casparcgConfig?.playOnLoad !== undefined ? templateDetails.casparcgConfig.playOnLoad : true,
-              data: templateDetails.instanceData || {},
-              customName: customName || originalName,
-              startTime: timing.startTime || '00:00:00',
-              duration: timing.duration || '00:00:10',
-              location: `CH${casparcgConfig.channel}-L${casparcgConfig.layer}`,
-              notes: item.data.notes || '',
-              autoRemove: templateDetails.autoRemove || false
-            };
-
-            console.log("Invio template della storia al rundown:", templateData);
-            rundownContext.addTemplate(templateData);
-            successCount++;
-          }
-
-          // Se la storia non ha né media né template, la saltiamo
-          if (!mediaDetails?.clipPath && !templatesDetails?.length && !templateDetails?.templateFile) {
-            console.log("Storia senza media o template associati, saltata");
+            }
+          } else {
+            console.log('⚠️ Storia senza media o template associati, saltata');
           }
         }
       });
+
+      console.log(`\n📊 RIEPILOGO INVIO:`);
+      console.log(`   - Elementi ricevuti: ${items.length}`);
+      console.log(`   - Elementi unici: ${uniqueItems.length}`);
+      console.log(`   - Elementi processati: ${itemsToProcess.length}`);
+      console.log(`   - Elementi inviati con successo: ${successCount}`);
+      console.groupEnd();
 
       // Mostra un messaggio di successo
       if (successCount > 0) {
@@ -974,7 +1057,8 @@ const ScaletteEditor = () => {
         dialogs.setErrorMessage("Nessun elemento valido da inviare al rundown.");
       }
     } catch (error) {
-      console.error("Errore durante l'invio al rundown:", error);
+      console.error("❌ Errore durante l'invio al rundown:", error);
+      console.groupEnd();
       dialogs.setErrorMessage(`Errore durante l'invio al rundown: ${error.message}`);
     } finally {
       setSendToRundownLoading(false);
