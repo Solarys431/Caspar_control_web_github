@@ -62,45 +62,8 @@ const RundownClock = ({ connected, playAll, stopAll }) => {
         {localTime.toTimeString().substring(0, 8)}
       </Typography>
 
-      <Box sx={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        mt: 1,
-        width: '100%'
-      }}>
-        <Button
-          variant="contained"
-          color="primary"
-          size="small"
-          startIcon={<PlayArrowIcon />}
-          onClick={() => {
-            if (playAll) {
-              playAll();
-            }
-          }}
-          disabled={!connected || items.length === 0}
-          sx={{ mr: 1, minWidth: '40px', fontSize: '0.7rem' }}
-        >
-          Play All
-        </Button>
-
-        <Button
-          variant="contained"
-          color="error"
-          size="small"
-          startIcon={<StopIcon />}
-          onClick={() => {
-            if (stopAll) {
-              stopAll();
-            }
-          }}
-          disabled={!connected || items.length === 0}
-          sx={{ minWidth: '40px', fontSize: '0.7rem' }}
-        >
-          Stop All
-        </Button>
-      </Box>
+      {/* PROBLEMA 2: Rimossi controlli duplicati "Play All" e "Stop All"
+          Questi controlli sono già disponibili in RundownHeader.js come "Auto Play" */}
 
       <Box sx={{
         display: 'flex',

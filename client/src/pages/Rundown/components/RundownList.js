@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import {
   Box,
   Typography,
@@ -40,6 +40,7 @@ import { format } from 'date-fns';
 import StoryItemDialog from './StoryItemDialog';
 import usePlaybackSync from '../../../hooks/usePlaybackSync';
 import { broadcastComponents, broadcastColors, broadcastAnimations } from '../../../styles/broadcastTheme';
+import { useCaspar } from '../../../contexts/CasparContext'; // PROBLEMA 3: Import per OSC data
 
 
 // Definizione dell'animazione di pulsazione per ON AIR
@@ -225,10 +226,11 @@ export const generateTemplateTooltip = (templatesDetails, templateDetails) => {
 
 /**
  * Genera il testo di visualizzazione principale per i template
+ * PROBLEMA 3: Modificato per mostrare template multipli su righe separate
  * @param {Array} templatesDetails - Array di oggetti template
  * @param {Object} templateDetails - Template singolo (legacy)
  * @param {number} maxVisible - Numero massimo di template da mostrare
- * @returns {string} - Testo ottimizzato per la visualizzazione principale
+ * @returns {JSX.Element|string} - Elemento React per template multipli o stringa per singolo
  */
 export const getTemplateDisplayText = (templatesDetails, templateDetails, maxVisible = 2) => {
   let templates = [];
@@ -248,17 +250,16 @@ export const getTemplateDisplayText = (templatesDetails, templateDetails, maxVis
     return formatTemplateDisplay(templates[0]);
   }
 
-  // Per template multipli, mostra i primi maxVisible + conteggio rimanenti
+  // PROBLEMA 3: Per template multipli, restituisci JSX con righe separate
   const visibleTemplates = templates.slice(0, maxVisible);
   const remainingCount = templates.length - maxVisible;
 
-  let displayText = visibleTemplates.map(formatTemplateDisplay).join(', ');
-
-  if (remainingCount > 0) {
-    displayText += `, +${remainingCount} altri`;
-  }
-
-  return displayText;
+  // Restituisci un componente React per la visualizzazione multi-riga
+  return {
+    isMultiLine: true,
+    templates: visibleTemplates,
+    remainingCount
+  };
 };
 
 /**
@@ -420,6 +421,13 @@ const RundownList = ({
   // RICHIESTA 1: Hook per sincronizzazione stato riproduzione
   const playbackSync = usePlaybackSync();
 
+  // PROBLEMA 3: Hook per OSC data
+  const { getOscData, getTimecode, oscConnected } = useCaspar();
+
+  // CORREZIONE CRITICA: Funzioni helper per determinare stato elementi
+  const isItemLive = (itemId) => playbackSync.isItemLive(itemId);
+  const isItemPreview = (itemId) => playbackSync.isItemPreview(itemId);
+
   // Estrai le scalette uniche dagli elementi esplosi
   const uniqueScalette = React.useMemo(() => {
     const scalette = new Set();
@@ -431,7 +439,166 @@ const RundownList = ({
     return Array.from(scalette);
   }, [items]);
 
-  // Riproduzione di un item
+  // PROBLEMA 3: Helper function per rilevare fine media tramite OSC data
+  const isMediaFinished = useCallback((oscData, timecode) => {
+    // Verifica se abbiamo dati OSC validi
+    if (!oscData || !oscConnected) return false;
+
+    // Verifica se abbiamo frame e length per calcolo preciso
+    if (typeof oscData.frame === 'number' && typeof oscData.length === 'number' && oscData.length > 0) {
+      const progress = (oscData.frame / oscData.length) * 100;
+      // Media finito se progresso >= 98% (margine di sicurezza per live production)
+      const isFinished = progress >= 98 && !oscData.paused;
+
+      if (isFinished) {
+        console.log(`🎬 [OSC-DETECTION] Media finito rilevato: ${progress.toFixed(2)}% (Frame: ${oscData.frame}/${oscData.length})`);
+      }
+
+      return isFinished;
+    }
+
+    // Fallback: se non abbiamo dati frame/length, usa timecode
+    if (timecode && timecode !== '00:00:00:00') {
+      // Considera finito se timecode è fermo per più di 2 secondi (indica fine media)
+      // Questo è un fallback meno preciso
+      return false; // Per ora disabilitato, preferiamo frame/length
+    }
+
+    return false;
+  }, [oscConnected]);
+
+  // PROBLEMA 3: Funzione OSC-based per auto-sequential su PLAY manuali
+  const setupManualAutoSequential = useCallback((currentItem) => {
+    // Trova l'indice dell'elemento corrente
+    const currentIndex = items.findIndex(item => item.id === currentItem.id);
+    if (currentIndex === -1 || currentIndex >= items.length - 1) {
+      console.log('🎬 [AUTO-SEQUENTIAL] Elemento corrente è l\'ultimo o non trovato, nessun auto-sequential');
+      return;
+    }
+
+    const nextItem = items[currentIndex + 1];
+    const channel = currentItem.data?.casparcgConfig?.channel || currentItem.data?.channel || 1;
+    const layer = currentItem.data?.casparcgConfig?.layer || currentItem.data?.layer || 10;
+
+    console.log(`🎬 [AUTO-SEQUENTIAL] Configurato OSC monitoring per ${currentItem.name} → ${nextItem.name} su ${channel}-${layer}`);
+
+    let oscPollingInterval = null;
+    let fallbackTimer = null;
+    let isSequentialActive = true;
+
+    // PROBLEMA 3: OSC-based monitoring per rilevare fine media
+    const startOscMonitoring = () => {
+      if (!oscConnected) {
+        console.warn('🎬 [AUTO-SEQUENTIAL] OSC non connesso, uso fallback timer');
+        setupFallbackTimer();
+        return;
+      }
+
+      oscPollingInterval = setInterval(() => {
+        if (!isSequentialActive) {
+          clearInterval(oscPollingInterval);
+          return;
+        }
+
+        // Ottieni dati OSC real-time
+        const oscData = getOscData(channel, layer);
+        const currentTimecode = getTimecode(channel, layer);
+
+        // Log dettagliato per debug (solo ogni 10 polling per ridurre spam)
+        if (Math.random() < 0.1) { // 10% delle volte
+          console.log(`🎬 [OSC-MONITORING] ${currentItem.name}: TC=${currentTimecode}, Frame=${oscData?.frame}/${oscData?.length}, Paused=${oscData?.paused}`);
+        }
+
+        // Verifica se il media è finito
+        if (isMediaFinished(oscData, currentTimecode)) {
+          console.log(`🎬 [AUTO-SEQUENTIAL] Fine media rilevata per ${currentItem.name}, avvio ${nextItem.name}`);
+
+          // Ferma il monitoring
+          isSequentialActive = false;
+          clearInterval(oscPollingInterval);
+          if (fallbackTimer) clearTimeout(fallbackTimer);
+
+          // Avvia il prossimo elemento
+          executeAutoSequential();
+        }
+      }, 500); // Polling ogni 500ms per bilanciare precisione e performance
+    };
+
+    // Fallback timer per robustezza
+    const setupFallbackTimer = () => {
+      let durationMs = 5000; // Default 5 secondi
+      if (currentItem.data?.duration) {
+        try {
+          const [h, m, s] = currentItem.data.duration.split(':').map(Number);
+          durationMs = (h * 3600 + m * 60 + s) * 1000;
+          if (durationMs <= 0) durationMs = 5000;
+        } catch (e) {
+          console.warn('🎬 [AUTO-SEQUENTIAL] Errore parsing durata, uso default');
+        }
+      }
+
+      fallbackTimer = setTimeout(() => {
+        if (isSequentialActive) {
+          console.log(`🎬 [AUTO-SEQUENTIAL] Fallback timer attivato per ${currentItem.name}`);
+          isSequentialActive = false;
+          if (oscPollingInterval) clearInterval(oscPollingInterval);
+          executeAutoSequential();
+        }
+      }, durationMs);
+    };
+
+    // Esegue la transizione al prossimo elemento
+    const executeAutoSequential = async () => {
+      try {
+        console.log(`🎬 [AUTO-SEQUENTIAL] Avvio automatico elemento successivo: ${nextItem.name}`);
+
+        // PROBLEMA 2 FIX: Pulisci lo stato dell'elemento corrente prima di procedere
+        console.log(`🧹 [AUTO-SEQUENTIAL] Pulizia stato elemento completato: ${currentItem.name}`);
+        playbackSync.clearPlaybackStatus(currentItem.id);
+
+        // Se il prossimo elemento è un media, usa LOADBG + PLAY
+        if (nextItem.type === 'MEDIA') {
+          // Prima ferma l'elemento corrente (con auto-take context)
+          await stopItem(currentItem, true); // true = isAutoTakeContext
+
+          // Poi avvia il prossimo elemento
+          await playItem(nextItem);
+
+          // Aggiorna lo stato di sincronizzazione per il nuovo elemento
+          playbackSync.updatePlaybackStatus(nextItem.id, {
+            status: 'LIVE',
+            channel: nextItem.data?.casparcgConfig?.channel || 1,
+            layer: nextItem.data?.casparcgConfig?.layer || 1,
+            startTime: Date.now(),
+            source: 'rundown'
+          });
+
+          // Continua la catena auto-sequential
+          setupManualAutoSequential(nextItem);
+
+          showNotification(`Auto-sequential: ${nextItem.data.customName || nextItem.name}`, 'info');
+        } else {
+          console.log('🎬 [AUTO-SEQUENTIAL] Prossimo elemento non è un media, fine catena');
+        }
+      } catch (error) {
+        console.error('🎬 [AUTO-SEQUENTIAL] Errore:', error);
+        showNotification(`Errore auto-sequential: ${error.message}`, 'error');
+      }
+    };
+
+    // Avvia monitoring OSC e fallback timer
+    startOscMonitoring();
+    setupFallbackTimer();
+
+    // Cleanup function
+    return () => {
+      isSequentialActive = false;
+      if (oscPollingInterval) clearInterval(oscPollingInterval);
+      if (fallbackTimer) clearTimeout(fallbackTimer);
+    };
+  }, [items, playItem, stopItem, playbackSync, showNotification, getOscData, getTimecode, oscConnected, isMediaFinished]);
+
+  // PROBLEMA 3: Riproduzione di un item con auto-sequential
   const handlePlayItem = async (item) => {
     if (!connected) {
         showNotification('Non connesso a CasparCG.', 'warning');
@@ -440,14 +607,17 @@ const RundownList = ({
     try {
       await playItem(item);
 
-      // RICHIESTA 1: Sincronizza stato di riproduzione
+      // CORREZIONE CRITICA: Usa status LIVE per ambiente rundown
       playbackSync.updatePlaybackStatus(item.id, {
-        status: 'PLAYING',
+        status: 'LIVE', // CORREZIONE: Cambiato da 'PLAYING' a 'LIVE'
         channel: item.data?.casparcgConfig?.channel || 1,
         layer: item.data?.casparcgConfig?.layer || 1,
         startTime: Date.now(),
         source: 'rundown'
       });
+
+      // PROBLEMA 3: Attiva auto-sequential per PLAY manuali
+      setupManualAutoSequential(item);
 
       showNotification(`Riproduzione avviata: ${item.data.customName || item.name}`, 'success');
     } catch (error) {
@@ -576,7 +746,7 @@ const RundownList = ({
 
   // MIGLIORAMENTO 1: Funzione helper per renderizzare il contenuto di ogni colonna
   const renderColumnContent = (columnId, item, index, itemProps) => {
-    const { isPlaying, isNext, isExploded, isMediaWithLinkedTemplate, isComplexStory, hasMedia, hasTemplates, hasMultipleTemplates } = itemProps;
+    const { isPlaying, isLive, isPreview, isNext, isExploded, isMediaWithLinkedTemplate, isComplexStory, hasMedia, hasTemplates, hasMultipleTemplates } = itemProps;
 
     switch (columnId) {
       case 'index':
@@ -590,6 +760,7 @@ const RundownList = ({
         return (
           <Box sx={{
             width: '80px',
+            textAlign: 'center', // PROBLEMA 3: Centratura testo
             fontFamily: 'monospace',
             color: scheduledPlayback ? '#4caf50' : 'inherit',
             fontWeight: scheduledPlayback ? 'bold' : 'normal',
@@ -601,7 +772,12 @@ const RundownList = ({
 
       case 'duration':
         return (
-          <Box sx={{ width: '80px', fontFamily: 'monospace', flexShrink: 0 }}>
+          <Box sx={{
+            width: '80px',
+            textAlign: 'center', // PROBLEMA 3: Centratura testo
+            fontFamily: 'monospace',
+            flexShrink: 0
+          }}>
             {item.data.duration || (item.type === 'MEDIA' ? '00:05:00' : '00:01:00')}
           </Box>
         );
@@ -611,6 +787,7 @@ const RundownList = ({
           <Tooltip title={item.data.location || (item.type === 'MEDIA' ? item.data.clip : item.data.template)}>
             <Box sx={{
                 width: '230px',
+                textAlign: 'center', // PROBLEMA 3: Centratura testo
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
@@ -757,8 +934,13 @@ const RundownList = ({
               flexDirection: 'column',
               overflow: 'hidden',
               flexGrow: 1,
+              textAlign: 'center', // PROBLEMA 3: Centratura testo
             }}>
-              <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              <Box sx={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center' // PROBLEMA 4: Centratura nomi elementi
+              }}>
                 <Typography
                   variant="body2"
                   sx={{
@@ -766,7 +948,8 @@ const RundownList = ({
                     whiteSpace: 'nowrap',
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
-                    mr: 1
+                    mr: 1,
+                    textAlign: 'center' // PROBLEMA 4: Centratura testo
                   }}
                   title={item.data.customName || item.name}
                 >
@@ -806,7 +989,14 @@ const RundownList = ({
 
               {/* Dettagli template annidato */}
               {isMediaWithLinkedTemplate && (
-                <Typography variant="caption" sx={{ color: '#FFC107', fontSize: '0.7rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+                <Typography variant="caption" sx={{
+                  color: '#FFC107',
+                  fontSize: '0.7rem',
+                  whiteSpace: 'nowrap',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  textAlign: 'center' // PROBLEMA 4: Centratura testo
+                }}
                             title={item.data.linkedTemplate.name}
                 >
                     + {item.data.linkedTemplate.name || 'Template Ann.'} (L: {item.data.linkedTemplate.layer}, CG: {item.data.linkedTemplate.cgLayer})
@@ -833,20 +1023,71 @@ const RundownList = ({
                     </Typography>
                   )}
                   {hasTemplates && (
-                    <Typography
-                      variant="caption"
-                      sx={{
-                        color: '#2196f3',
-                        fontSize: '0.7rem',
-                        display: 'block',
-                        whiteSpace: 'nowrap',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis'
-                      }}
-                      title={generateTemplateTooltip(item.data.templatesDetails, item.data.templateDetails)}
-                    >
-                      🎨 {getTemplateDisplayText(item.data.templatesDetails, item.data.templateDetails, 2)}
-                    </Typography>
+                    <Box sx={{ color: '#2196f3', fontSize: '0.7rem' }}>
+                      {(() => {
+                        const templateDisplay = getTemplateDisplayText(item.data.templatesDetails, item.data.templateDetails, 2);
+
+                        // PROBLEMA 3: Gestione template multipli su righe separate
+                        if (typeof templateDisplay === 'object' && templateDisplay.isMultiLine) {
+                          return (
+                            <Box>
+                              {templateDisplay.templates.map((template, idx) => (
+                                <Typography
+                                  key={idx}
+                                  variant="caption"
+                                  sx={{
+                                    color: '#2196f3',
+                                    fontSize: '0.7rem',
+                                    display: 'block',
+                                    textAlign: 'center', // PROBLEMA 3: Centratura testo
+                                    whiteSpace: 'nowrap',
+                                    overflow: 'hidden',
+                                    textOverflow: 'ellipsis'
+                                  }}
+                                  title={generateTemplateTooltip(item.data.templatesDetails, item.data.templateDetails)}
+                                >
+                                  🎨 {formatTemplateDisplay(template)}
+                                </Typography>
+                              ))}
+                              {templateDisplay.remainingCount > 0 && (
+                                <Typography
+                                  variant="caption"
+                                  sx={{
+                                    color: '#2196f3',
+                                    fontSize: '0.7rem',
+                                    display: 'block',
+                                    textAlign: 'center',
+                                    fontStyle: 'italic',
+                                    opacity: 0.8
+                                  }}
+                                >
+                                  +{templateDisplay.remainingCount} altri template
+                                </Typography>
+                              )}
+                            </Box>
+                          );
+                        } else {
+                          // Template singolo
+                          return (
+                            <Typography
+                              variant="caption"
+                              sx={{
+                                color: '#2196f3',
+                                fontSize: '0.7rem',
+                                display: 'block',
+                                textAlign: 'center', // PROBLEMA 3: Centratura testo
+                                whiteSpace: 'nowrap',
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis'
+                              }}
+                              title={generateTemplateTooltip(item.data.templatesDetails, item.data.templateDetails)}
+                            >
+                              🎨 {templateDisplay}
+                            </Typography>
+                          );
+                        }
+                      })()}
+                    </Box>
                   )}
                   {/* MIGLIORAMENTO 2: Indicatore di conflitti template se presenti */}
                   {hasMultipleTemplates && detectTemplateConflicts(item.data.templatesDetails).length > 0 && (
@@ -872,7 +1113,8 @@ const RundownList = ({
                   variant="caption"
                   sx={{
                     color: item.type === 'MEDIA' ? '#4caf50' : '#2196f3',
-                    fontSize: '0.7rem'
+                    fontSize: '0.7rem',
+                    textAlign: 'center' // PROBLEMA 4: Centratura testo
                   }}
                 >
                   In onda: {formatPlayingTime(item.playingStartTime)}
@@ -896,6 +1138,7 @@ const RundownList = ({
           <Tooltip title={item.data.notes || item.data.note || ''}>
             <Box sx={{
                 width: '130px',
+                textAlign: 'center', // PROBLEMA 3: Centratura testo
                 overflow: 'hidden',
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
@@ -992,7 +1235,8 @@ const RundownList = ({
             alignItems: 'center',
             flexShrink: 0
           }}>
-            {item.isPlaying ? (
+            {/* CORREZIONE CRITICA: Priorità LIVE > PREVIEW > NEXT > ESPLOSO */}
+            {isLive ? (
               <Box sx={{
                 background: broadcastColors.gradients.onAir,
                 color: broadcastColors.text.primary,
@@ -1013,6 +1257,27 @@ const RundownList = ({
               }}>
                 <PlayArrowIcon fontSize="small" sx={{ mr: 0.5, fontSize: '1rem' }} />
                 ON AIR
+              </Box>
+            ) : isPreview ? (
+              <Box sx={{
+                background: `linear-gradient(135deg, #9c27b0 0%, #7b1fa2 100%)`, // Viola per PREVIEW
+                color: broadcastColors.text.primary,
+                borderRadius: '6px',
+                padding: '4px 12px',
+                fontSize: '0.75rem',
+                fontWeight: 'bold',
+                fontFamily: '"Roboto Condensed", "Arial Narrow", sans-serif',
+                textTransform: 'uppercase',
+                letterSpacing: '0.8px',
+                display: 'flex',
+                alignItems: 'center',
+                minWidth: '80px',
+                justifyContent: 'center',
+                border: `1px solid #9c27b0`,
+                boxShadow: `0 0 6px #9c27b040`
+              }}>
+                <PlayArrowIcon fontSize="small" sx={{ mr: 0.5, fontSize: '1rem' }} />
+                PREVIEW
               </Box>
             ) : isNext ? (
                 <Box sx={{
@@ -1306,7 +1571,7 @@ const RundownList = ({
         boxShadow: broadcastColors.elevation?.medium || '0 2px 6px rgba(0, 0, 0, 0.4)',
         color: broadcastColors.text.primary
       }}>
-        {/* MIGLIORAMENTO 1: Intestazione dinamica basata su colonne visibili */}
+        {/* RICHIESTA 1: Intestazione dinamica broadcast professionale */}
         <Box sx={{ display: 'flex', flexGrow: 1 }}>
           {visibleColumnConfigs.map((column, index) => {
             // Gestione speciale per lo spazio tra IN e OUT
@@ -1322,11 +1587,18 @@ const RundownList = ({
                     width: column.width === 'flexGrow' ? undefined : column.width,
                     flexGrow: column.width === 'flexGrow' ? 1 : 0,
                     minWidth: column.minWidth || undefined,
-                    textAlign: column.textAlign,
+                    textAlign: 'center', // RICHIESTA 1: Centratura delle scritte
                     flexShrink: 0,
                     overflow: 'hidden',
                     textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap'
+                    whiteSpace: 'nowrap',
+                    // RICHIESTA 1: Stili broadcast professionali per header
+                    fontFamily: '"Roboto Condensed", "Arial Narrow", sans-serif',
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.5px',
+                    fontWeight: 'bold',
+                    color: broadcastColors.text.primary,
+                    fontSize: '0.8rem'
                   }}
                 >
                   {column.label}
@@ -1475,10 +1747,11 @@ const RundownList = ({
       }}>
         {filteredItems.length > 0 ? (
           filteredItems.map((item, index) => {
-            // MODIFICA/AGGIUNTA START: Determinare se l'item è ON AIR o NEXT
-            const isPlaying = item.isPlaying;
+            // CORREZIONE CRITICA: Determinare stato corretto usando playbackSync
+            const isLive = isItemLive(item.id); // LIVE = in onda su canale 1 (Rundown)
+            const isPreview = isItemPreview(item.id); // PREVIEW = in riproduzione su canale 3 (Scalette)
+            const isPlaying = item.isPlaying || isLive; // Mantieni compatibilità con logica esistente
             const isNext = item.id === nextItemId;
-            // MODIFICA/AGGIUNTA END
 
             // Verifica se l'elemento è esploso (ha sourceInfo)
             const isExploded = item.data && item.data.sourceInfo;
@@ -1501,6 +1774,8 @@ const RundownList = ({
             // MIGLIORAMENTO 1: Oggetto con le proprietà dell'item per la funzione helper
             const itemProps = {
               isPlaying,
+              isLive, // CORREZIONE CRITICA: Aggiungi stato LIVE
+              isPreview, // CORREZIONE CRITICA: Aggiungi stato PREVIEW
               isNext,
               isExploded,
               isMediaWithLinkedTemplate,

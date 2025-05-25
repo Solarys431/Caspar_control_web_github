@@ -209,6 +209,7 @@ FilterBar.displayName = 'FilterBar';
  * @param {Function} props.onEditItem - Callback per modifica elemento
  * @param {Function} props.onPlayItem - Callback per riproduzione elemento
  * @param {Function} props.onRemoveItem - Callback per rimozione elemento
+ * @param {Function} props.onUpdateItem - Callback per aggiornamento elemento
  * @param {Object} props.editingStatusByItemId - Stato editing elementi
  * @param {boolean} props.canEdit - Se l'utente può modificare
  * @param {boolean} props.loading - Se in caricamento
@@ -223,6 +224,7 @@ const ScalettaCardView = memo(({
   onEditItem,
   onPlayItem,
   onRemoveItem,
+  onUpdateItem,
   editingStatusByItemId = {},
   canEdit = true,
   loading = false,
@@ -334,6 +336,7 @@ const ScalettaCardView = memo(({
                     onEdit={onEditItem}
                     onPlay={onPlayItem}
                     onDelete={onRemoveItem}
+                    onUpdateItem={onUpdateItem}
                     canEdit={canEdit}
                     isSelected={selectedItemsSet.has(item.id)}
                     onSelectionChange={(checked) => onItemSelectionChange && onItemSelectionChange(item.id, checked)}

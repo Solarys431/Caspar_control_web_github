@@ -150,14 +150,22 @@ export const CasparProvider = ({ children }) => {
     });
 
     newSocket.on('osc:frame', (data) => {
+      // PROBLEMA 1 FIX: Estrai il valore primitivo invece dell'oggetto completo
+      const frameValue = typeof data.frame === 'number' ? data.frame : (data.frame || 0);
+
       // Aggiorna il frame per il canale/layer specifico
       setOscData(prev => ({
         ...prev,
         [`${data.channel}-${data.layer}`]: {
           ...prev[`${data.channel}-${data.layer}`],
-          frame: data.frame
+          frame: frameValue // Salva solo il valore numerico
         }
       }));
+
+      // Log per debug OSC data parsing
+      if (data.channel === 3) {
+        console.log(`🔧 [OSC FIX] Frame aggiornato per ${data.channel}-${data.layer}: ${frameValue} (tipo: ${typeof frameValue})`);
+      }
     });
 
     newSocket.on('osc:fps', (data) => {
@@ -213,35 +221,39 @@ export const CasparProvider = ({ children }) => {
         }
       }));
 
-      // Aggiorna anche i dati OSC
+      // PROBLEMA 1 FIX: Aggiorna i dati OSC con valore primitivo
       setOscData(prev => ({
         ...prev,
         [channelLayerKey]: {
           ...prev[channelLayerKey],
-          length: {
-            length: data.length,
-            frames: data.length,
-            timecode: timecode
-          },
+          length: data.length, // Salva solo il valore numerico
           duration: timecode
         }
       }));
 
       // Log per debug (solo per il canale 3 che è quello di preview)
       if (data.channel === 3) {
-        console.log(`OSC Length aggiornata per ${data.channel}-${data.layer}: ${data.length} frames (${timecode})`);
+        console.log(`🔧 [OSC FIX] Length aggiornata per ${data.channel}-${data.layer}: ${data.length} frames (${timecode}) - tipo: ${typeof data.length}`);
       }
     });
 
     newSocket.on('osc:paused', (data) => {
+      // PROBLEMA 1 FIX: Estrai il valore primitivo boolean invece dell'oggetto
+      const pausedValue = typeof data.paused === 'boolean' ? data.paused : Boolean(data.paused);
+
       // Aggiorna lo stato di pausa per il canale/layer specifico
       setOscData(prev => ({
         ...prev,
         [`${data.channel}-${data.layer}`]: {
           ...prev[`${data.channel}-${data.layer}`],
-          paused: data.paused
+          paused: pausedValue // Salva solo il valore boolean
         }
       }));
+
+      // Log per debug OSC data parsing
+      if (data.channel === 3) {
+        console.log(`🔧 [OSC FIX] Paused aggiornato per ${data.channel}-${data.layer}: ${pausedValue} (tipo: ${typeof pausedValue})`);
+      }
     });
 
     newSocket.on('osc:loop', (data) => {

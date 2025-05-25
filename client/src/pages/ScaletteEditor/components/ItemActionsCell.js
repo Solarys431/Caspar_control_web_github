@@ -17,6 +17,9 @@ import {
   Delete as DeleteIcon
 } from '@mui/icons-material';
 
+// RICHIESTA 2: Tema broadcast professionale
+import { broadcastColors, broadcastAnimations } from '../../../styles/broadcastTheme';
+
 /**
  * Componente per la cella delle azioni nella tabella degli elementi della scaletta
  *
@@ -70,7 +73,25 @@ const ItemActionsCell = ({
               size="small"
               onClick={() => onEditItem(item)}
               disabled={!!isBeingEdited}
-              color="primary"
+              sx={{
+                background: `linear-gradient(135deg, ${broadcastColors.primary.main} 0%, ${broadcastColors.primary.dark} 100%)`,
+                color: broadcastColors.text.primary,
+                border: `1px solid ${broadcastColors.primary.main}`,
+                borderRadius: '6px',
+                width: '28px',
+                height: '28px',
+                transition: `all ${broadcastAnimations.duration.normal} ${broadcastAnimations.easing.standard}`,
+                '&:hover': {
+                  background: `linear-gradient(135deg, ${broadcastColors.primary.light} 0%, ${broadcastColors.primary.main} 100%)`,
+                  transform: 'scale(1.05)',
+                  boxShadow: `0 0 8px ${broadcastColors.primary.main}60`
+                },
+                '&:disabled': {
+                  background: broadcastColors.background.secondary,
+                  color: broadcastColors.text.disabled,
+                  border: `1px solid ${broadcastColors.border.primary}`
+                }
+              }}
             >
               {isBeingEdited ? <CircularProgress size={20} /> : <EditIcon fontSize="small" />}
             </IconButton>
@@ -87,7 +108,20 @@ const ItemActionsCell = ({
                 <IconButton
                   size="small"
                   onClick={() => onPlayItem(item)}
-                  color="success"
+                  sx={{
+                    background: `linear-gradient(135deg, ${broadcastColors.status.ready} 0%, #388e3c 100%)`,
+                    color: broadcastColors.text.primary,
+                    border: `1px solid ${broadcastColors.status.ready}`,
+                    borderRadius: '6px',
+                    width: '28px',
+                    height: '28px',
+                    transition: `all ${broadcastAnimations.duration.normal} ${broadcastAnimations.easing.standard}`,
+                    '&:hover': {
+                      background: `linear-gradient(135deg, ${broadcastColors.status.ready} 0%, #2e7d32 100%)`,
+                      transform: 'scale(1.05)',
+                      boxShadow: `0 0 8px ${broadcastColors.status.ready}60`
+                    }
+                  }}
                 >
                   <PlayIcon fontSize="small" />
                 </IconButton>
@@ -96,7 +130,20 @@ const ItemActionsCell = ({
                 <IconButton
                   size="small"
                   onClick={() => onPauseItem(item)}
-                  color="warning"
+                  sx={{
+                    background: `linear-gradient(135deg, ${broadcastColors.status.warning} 0%, #e6a100 100%)`,
+                    color: broadcastColors.text.primary,
+                    border: `1px solid ${broadcastColors.status.warning}`,
+                    borderRadius: '6px',
+                    width: '28px',
+                    height: '28px',
+                    transition: `all ${broadcastAnimations.duration.normal} ${broadcastAnimations.easing.standard}`,
+                    '&:hover': {
+                      background: `linear-gradient(135deg, ${broadcastColors.status.warning} 0%, #cc8f00 100%)`,
+                      transform: 'scale(1.05)',
+                      boxShadow: `0 0 8px ${broadcastColors.status.warning}60`
+                    }
+                  }}
                 >
                   <PauseIcon fontSize="small" />
                 </IconButton>
@@ -105,7 +152,20 @@ const ItemActionsCell = ({
                 <IconButton
                   size="small"
                   onClick={() => onStopItem(item)}
-                  color="error"
+                  sx={{
+                    background: `linear-gradient(135deg, ${broadcastColors.status.error} 0%, #c62828 100%)`,
+                    color: broadcastColors.text.primary,
+                    border: `1px solid ${broadcastColors.status.error}`,
+                    borderRadius: '6px',
+                    width: '28px',
+                    height: '28px',
+                    transition: `all ${broadcastAnimations.duration.normal} ${broadcastAnimations.easing.standard}`,
+                    '&:hover': {
+                      background: `linear-gradient(135deg, ${broadcastColors.status.error} 0%, #b71c1c 100%)`,
+                      transform: 'scale(1.05)',
+                      boxShadow: `0 0 8px ${broadcastColors.status.error}60`
+                    }
+                  }}
                 >
                   <StopIcon fontSize="small" />
                 </IconButton>
@@ -119,7 +179,20 @@ const ItemActionsCell = ({
                 <IconButton
                   size="small"
                   onClick={() => onPlayTemplate(item)}
-                  color="success"
+                  sx={{
+                    background: `linear-gradient(135deg, ${broadcastColors.status.ready} 0%, #388e3c 100%)`,
+                    color: broadcastColors.text.primary,
+                    border: `1px solid ${broadcastColors.status.ready}`,
+                    borderRadius: '6px',
+                    width: '28px',
+                    height: '28px',
+                    transition: `all ${broadcastAnimations.duration.normal} ${broadcastAnimations.easing.standard}`,
+                    '&:hover': {
+                      background: `linear-gradient(135deg, ${broadcastColors.status.ready} 0%, #2e7d32 100%)`,
+                      transform: 'scale(1.05)',
+                      boxShadow: `0 0 8px ${broadcastColors.status.ready}60`
+                    }
+                  }}
                 >
                   <PlayIcon fontSize="small" />
                 </IconButton>
@@ -128,7 +201,20 @@ const ItemActionsCell = ({
                 <IconButton
                   size="small"
                   onClick={() => onStopTemplate(item)}
-                  color="error"
+                  sx={{
+                    background: `linear-gradient(135deg, ${broadcastColors.status.error} 0%, #c62828 100%)`,
+                    color: broadcastColors.text.primary,
+                    border: `1px solid ${broadcastColors.status.error}`,
+                    borderRadius: '6px',
+                    width: '28px',
+                    height: '28px',
+                    transition: `all ${broadcastAnimations.duration.normal} ${broadcastAnimations.easing.standard}`,
+                    '&:hover': {
+                      background: `linear-gradient(135deg, ${broadcastColors.status.error} 0%, #b71c1c 100%)`,
+                      transform: 'scale(1.05)',
+                      boxShadow: `0 0 8px ${broadcastColors.status.error}60`
+                    }
+                  }}
                 >
                   <StopIcon fontSize="small" />
                 </IconButton>
@@ -142,7 +228,20 @@ const ItemActionsCell = ({
                 <IconButton
                   size="small"
                   onClick={() => onPlayStory(item)}
-                  color="success"
+                  sx={{
+                    background: `linear-gradient(135deg, ${broadcastColors.status.ready} 0%, #388e3c 100%)`,
+                    color: broadcastColors.text.primary,
+                    border: `1px solid ${broadcastColors.status.ready}`,
+                    borderRadius: '6px',
+                    width: '28px',
+                    height: '28px',
+                    transition: `all ${broadcastAnimations.duration.normal} ${broadcastAnimations.easing.standard}`,
+                    '&:hover': {
+                      background: `linear-gradient(135deg, ${broadcastColors.status.ready} 0%, #2e7d32 100%)`,
+                      transform: 'scale(1.05)',
+                      boxShadow: `0 0 8px ${broadcastColors.status.ready}60`
+                    }
+                  }}
                 >
                   <PlayIcon fontSize="small" />
                 </IconButton>
@@ -151,7 +250,20 @@ const ItemActionsCell = ({
                 <IconButton
                   size="small"
                   onClick={() => onStopStory(item)}
-                  color="error"
+                  sx={{
+                    background: `linear-gradient(135deg, ${broadcastColors.status.error} 0%, #c62828 100%)`,
+                    color: broadcastColors.text.primary,
+                    border: `1px solid ${broadcastColors.status.error}`,
+                    borderRadius: '6px',
+                    width: '28px',
+                    height: '28px',
+                    transition: `all ${broadcastAnimations.duration.normal} ${broadcastAnimations.easing.standard}`,
+                    '&:hover': {
+                      background: `linear-gradient(135deg, ${broadcastColors.status.error} 0%, #b71c1c 100%)`,
+                      transform: 'scale(1.05)',
+                      boxShadow: `0 0 8px ${broadcastColors.status.error}60`
+                    }
+                  }}
                 >
                   <StopIcon fontSize="small" />
                 </IconButton>
@@ -174,7 +286,25 @@ const ItemActionsCell = ({
               }
             }}
             disabled={!!isBeingEdited}
-            color="error"
+            sx={{
+              background: `linear-gradient(135deg, ${broadcastColors.status.error} 0%, #c62828 100%)`,
+              color: broadcastColors.text.primary,
+              border: `1px solid ${broadcastColors.status.error}`,
+              borderRadius: '6px',
+              width: '28px',
+              height: '28px',
+              transition: `all ${broadcastAnimations.duration.normal} ${broadcastAnimations.easing.standard}`,
+              '&:hover': {
+                background: `linear-gradient(135deg, ${broadcastColors.status.error} 0%, #b71c1c 100%)`,
+                transform: 'scale(1.05)',
+                boxShadow: `0 0 8px ${broadcastColors.status.error}60`
+              },
+              '&:disabled': {
+                background: broadcastColors.background.secondary,
+                color: broadcastColors.text.disabled,
+                border: `1px solid ${broadcastColors.border.primary}`
+              }
+            }}
           >
             <DeleteIcon fontSize="small" />
           </IconButton>

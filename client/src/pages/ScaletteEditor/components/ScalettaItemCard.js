@@ -12,7 +12,6 @@ import {
   Chip,
   IconButton,
   Collapse,
-  Divider,
   Grid,
   LinearProgress,
   Tooltip
@@ -31,6 +30,7 @@ import {
 import ItemTypeIcon, { getTypeColor } from './ItemTypeIcon';
 import StatusBadge, { useItemStatus } from './StatusBadge';
 import { ItemSelectionCheckbox } from './SelectionCheckbox';
+import EditableStoryContent from './EditableStoryContent';
 
 /**
  * Componente per sezione metadati della card
@@ -110,41 +110,20 @@ const MetadataSection = memo(({ item }) => {
 MetadataSection.displayName = 'MetadataSection';
 
 /**
- * Componente per contenuto della storia
+ * Componente per contenuto della storia con editing inline
  */
-const StoryContentSection = memo(({ content, expanded, onToggle }) => {
-  if (!content) return null;
-
-  const truncatedContent = content.length > 150
-    ? content.substring(0, 150) + '...'
-    : content;
+const StoryContentSection = memo(({ content, onUpdateContent, canEdit }) => {
+  // Se non c'è contenuto e non si può modificare, non mostrare nulla
+  if (!content && !canEdit) return null;
 
   return (
-    <Box sx={{ mt: 2 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-        <Typography variant="subtitle2" sx={{ fontWeight: 600, color: 'warning.main' }}>
-          📄 Contenuto Storia
-        </Typography>
-        {content.length > 150 && (
-          <IconButton size="small" onClick={onToggle}>
-            {expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
-          </IconButton>
-        )}
-      </Box>
-
-      <Typography variant="body2" sx={{
-        whiteSpace: 'pre-wrap',
-        lineHeight: 1.4,
-        color: 'text.secondary',
-        bgcolor: 'background.default',
-        p: 1.5,
-        borderRadius: 1,
-        border: '1px solid',
-        borderColor: 'divider'
-      }}>
-        {expanded ? content : truncatedContent}
-      </Typography>
-    </Box>
+    <EditableStoryContent
+      content={content || ''}
+      onUpdate={onUpdateContent}
+      canEdit={canEdit}
+      expanded={false} // L'espansione è gestita internamente dal componente EditableStoryContent
+      maxLength={150}
+    />
   );
 });
 
@@ -242,6 +221,7 @@ AssociatedFilesSection.displayName = 'AssociatedFilesSection';
  * @param {Function} props.onEdit - Callback per modifica
  * @param {Function} props.onPlay - Callback per riproduzione
  * @param {Function} props.onDelete - Callback per eliminazione
+ * @param {Function} props.onUpdateItem - Callback per aggiornamento elemento
  * @param {boolean} props.canEdit - Se l'utente può modificare
  * @param {boolean} props.isSelected - Se l'elemento è selezionato
  * @param {Function} props.onSelectionChange - Callback per cambio selezione
@@ -258,6 +238,7 @@ const ScalettaItemCard = memo(({
   onEdit,
   onPlay,
   onDelete,
+  onUpdateItem,
   canEdit = true,
   isSelected = false,
   onSelectionChange,
@@ -265,7 +246,6 @@ const ScalettaItemCard = memo(({
   ...props
 }) => {
   const [expanded, setExpanded] = useState(false);
-  const [contentExpanded, setContentExpanded] = useState(false);
 
   const status = useItemStatus(item, editingStatus);
   const isBeingEdited = editingStatus[item.id];
@@ -280,6 +260,31 @@ const ScalettaItemCard = memo(({
   const handleExpandClick = (event) => {
     event.stopPropagation();
     setExpanded(!expanded);
+  };
+
+  // Funzione per gestire l'aggiornamento del contenuto della story
+  const handleUpdateContent = async (newContent) => {
+    if (!onUpdateItem) {
+      throw new Error('Callback di aggiornamento non disponibile');
+    }
+
+    // Crea una copia dell'elemento con il contenuto aggiornato
+    const updatedItem = {
+      ...item,
+      data: {
+        ...item.data,
+        content: newContent
+      }
+    };
+
+    // Chiama il callback di aggiornamento
+    const result = await onUpdateItem(updatedItem);
+
+    if (!result.success) {
+      throw new Error(result.error || 'Errore durante l\'aggiornamento');
+    }
+
+    return result;
   };
 
   return (
@@ -366,11 +371,11 @@ const ScalettaItemCard = memo(({
         </Box>
 
         {/* Contenuto principale */}
-        {item.type === 'STORY' && item.data?.content && (
+        {item.type === 'STORY' && (
           <StoryContentSection
-            content={item.data.content}
-            expanded={contentExpanded}
-            onToggle={() => setContentExpanded(!contentExpanded)}
+            content={item.data?.content}
+            onUpdateContent={handleUpdateContent}
+            canEdit={canEdit}
           />
         )}
 

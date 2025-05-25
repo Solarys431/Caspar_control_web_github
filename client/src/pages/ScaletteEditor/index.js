@@ -54,6 +54,9 @@ import SendToRundownDialog from './components/SendToRundownDialog';
 // Stili CSS
 import './ScaletteEditor.css';
 
+// RICHIESTA 2: Tema broadcast professionale
+import { broadcastComponents, broadcastColors, broadcastAnimations } from '../../styles/broadcastTheme';
+
 /**
  * Componente principale per l'editor di scalette
  *
@@ -139,6 +142,24 @@ const ScaletteEditor = () => {
 
   // RICHIESTA 1: Hook per sincronizzazione stato riproduzione
   const playbackSync = usePlaybackSync();
+
+  // CORREZIONE CRITICA: Sincronizzazione automatica con elementi del rundown in riproduzione
+  useEffect(() => {
+    if (rundownContext?.items) {
+      rundownContext.items.forEach(item => {
+        if (item.isPlaying) {
+          console.log(`🔄 [SCALETTE SYNC] Sincronizzazione elemento in riproduzione dal rundown: ${item.id}`);
+          playbackSync.updatePlaybackStatus(item.id, {
+            status: 'PLAYING',
+            channel: item.data?.casparcgConfig?.channel || 1,
+            layer: item.data?.casparcgConfig?.layer || 1,
+            startTime: item.playingStartTime || Date.now(),
+            source: 'rundown'
+          });
+        }
+      });
+    }
+  }, [rundownContext?.items, playbackSync]);
 
   // Verifica se l'utente è un operatore di playout
   useEffect(() => {
@@ -1517,9 +1538,9 @@ const ScaletteEditor = () => {
       previewPlayer.setPreviewMedia(clip);
       previewPlayer.handlePlaybackControl('play');
 
-      // RICHIESTA 1: Sincronizza stato di riproduzione
+      // CORREZIONE CRITICA: Usa status PREVIEW per ambiente scalette
       playbackSync.updatePlaybackStatus(item.id, {
-        status: 'PLAYING',
+        status: 'PREVIEW', // CORREZIONE: Cambiato da 'PLAYING' a 'PREVIEW'
         channel: previewChannel,
         layer: 1,
         startTime: Date.now(),
@@ -2384,6 +2405,7 @@ const ScaletteEditor = () => {
                       console.log("scalettaItems:", scalettaItems);
                     }
                   }}
+                  onUpdateItem={scalettaItems.updateItem}
                   editingStatusByItemId={scalettaItems.editingStatusByItemId}
                   canEdit={scalettaItems.userRoleForScaletta === 'owner' || scalettaItems.userRoleForScaletta === 'editor'}
                   selectedItemsSet={multiSelection.selectedItemsSet}

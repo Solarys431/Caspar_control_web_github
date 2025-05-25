@@ -40,9 +40,8 @@ const RundownHeader = ({
   items,
   connected,
   showNotification,
-  dialogsState,
-  playAll,
-  stopAll
+  dialogsState
+  // PROBLEMA 1: Rimosso playAll e stopAll dalle props - ora importati dal context
 }) => {
   const {
     setRundownName,
@@ -52,7 +51,9 @@ const RundownHeader = ({
     loadRundown,
     clearRundown,
     setAutoPlay,
-    autoPlay
+    autoPlay,
+    playAll, // PROBLEMA 1: Importa playAll dal context invece di riceverlo come prop
+    stopAll  // PROBLEMA 1: Importa anche stopAll per completezza
   } = useRundown();
 
   const {
@@ -98,48 +99,85 @@ const RundownHeader = ({
     }
   };
 
-  // Riproduzione automatica del rundown
+  // PROBLEMA 1: Riproduzione automatica del rundown (corretto)
   const handleAutoPlay = async () => {
-    if (!connected || items.length === 0) return;
+    if (!connected || items.length === 0) {
+      showNotification('Nessun elemento da riprodurre o non connesso a CasparCG', 'warning');
+      return;
+    }
 
     try {
+      console.log('Avvio riproduzione automatica con', items.length, 'elementi');
+
+      // Prima attiva la modalità auto-play
       setAutoPlay(true);
+
+      // Poi avvia la riproduzione sequenziale
       if (playAll) {
         await playAll();
-        console.log('Riproduzione automatica avviata');
+        console.log('Riproduzione automatica avviata con successo');
+      } else {
+        throw new Error('Funzione playAll non disponibile');
       }
+
       showNotification('Riproduzione automatica avviata', 'success');
     } catch (error) {
       console.error('Errore nella riproduzione automatica:', error);
+      setAutoPlay(false); // PROBLEMA 1: Reset stato in caso di errore
       showNotification(`Errore nell'avvio della riproduzione automatica: ${error.message}`, 'error');
     }
   };
 
-  // Arresto della riproduzione automatica
-  const handleStopAutoPlay = () => {
+  // PROBLEMA 1: Funzione per fermare auto-play
+  const handleStopAutoPlay = async () => {
     try {
       setAutoPlay(false);
       if (stopAll) {
-        stopAll();
-        console.log('Riproduzione automatica fermata');
+        await stopAll();
+        console.log('Auto-play fermato con successo');
       }
-      showNotification('Riproduzione automatica fermata', 'success');
+      showNotification('Riproduzione automatica fermata', 'info');
     } catch (error) {
-      console.error('Errore nell\'arresto della riproduzione automatica:', error);
-      showNotification(`Errore nell'arresto della riproduzione automatica: ${error.message}`, 'error');
+      console.error('Errore nel fermare auto-play:', error);
+      showNotification(`Errore nel fermare auto-play: ${error.message}`, 'error');
     }
   };
 
-  // Riproduzione in loop del primo elemento
-  const handlePlayLoop = () => {
-    if (!connected || items.length === 0) return;
+  // PROBLEMA 1: Funzione handleStopAutoPlay già definita sopra - rimossa duplicazione
+
+  // PROBLEMA 2: Riproduzione in loop del primo elemento (corretto)
+  const handlePlayLoop = async () => {
+    if (!connected || items.length === 0) {
+      showNotification('Nessun elemento da riprodurre o non connesso a CasparCG', 'warning');
+      return;
+    }
 
     try {
+      const firstItem = items[0];
+
+      // PROBLEMA 2: Assicurati che l'elemento abbia il flag loop attivato
+      const itemWithLoop = {
+        ...firstItem,
+        data: {
+          ...firstItem.data,
+          loop: true, // Attiva il loop per questo elemento
+          // Assicurati che il comando CasparCG includa LOOP
+          casparcgConfig: {
+            ...firstItem.data.casparcgConfig,
+            loop: true
+          }
+        }
+      };
+
       if (playItem) {
-        playItem(items[0]);
-        console.log('Riproduzione in loop avviata');
+        await playItem(itemWithLoop);
+        console.log('Riproduzione in loop avviata per:', firstItem.name);
+
+        // PROBLEMA 2: Aggiorna lo stato per indicare che è in loop
+        showNotification(`Loop attivato: ${firstItem.data.customName || firstItem.name} - Premi Stop per fermare`, 'info');
+      } else {
+        throw new Error('Funzione playItem non disponibile');
       }
-      showNotification(`Riproduzione in loop avviata: ${items[0].data.customName || items[0].name}`, 'success');
     } catch (error) {
       console.error('Errore nella riproduzione in loop:', error);
       showNotification(`Errore nella riproduzione in loop: ${error.message}`, 'error');

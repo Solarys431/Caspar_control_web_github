@@ -3,26 +3,29 @@ import { useRundown } from '../contexts/RundownContext';
 
 /**
  * Hook per la sincronizzazione dello stato di riproduzione tra Rundown ed Editor Scalette
- * Gestisce la propagazione degli stati ON AIR, NEXT, PLAYING tra i diversi componenti
+ * Gestisce la propagazione degli stati LIVE, PREVIEW, NEXT tra i diversi componenti
+ * CORREZIONE CRITICA: Implementa sincronizzazione unidirezionale (Rundown → Scalette)
  */
 const usePlaybackSync = () => {
   // Stati per il tracking degli elementi in riproduzione
   const [playingItems, setPlayingItems] = useState(new Map()); // Map<itemId, playbackInfo>
   const [nextItemId, setNextItemId] = useState(null);
-  const [liveItems, setLiveItems] = useState(new Set()); // Set di itemId in onda
-  
+  const [liveItems, setLiveItems] = useState(new Set()); // Set di itemId in onda LIVE (canale 1)
+  const [previewItems, setPreviewItems] = useState(new Set()); // Set di itemId in preview (canale 3)
+
   // Riferimenti per evitare loop infiniti
   const lastUpdateRef = useRef(Date.now());
   const syncTimeoutRef = useRef(null);
-  
+
   // Accesso al contesto Rundown
   const { items: rundownItems } = useRundown();
 
   /**
    * Aggiorna lo stato di riproduzione di un elemento
+   * CORREZIONE CRITICA: Distingue tra LIVE (canale 1) e PREVIEW (canale 3)
    * @param {string} itemId - ID dell'elemento
    * @param {Object} playbackInfo - Informazioni di riproduzione
-   * @param {string} playbackInfo.status - PLAYING, PAUSED, STOPPED, LIVE
+   * @param {string} playbackInfo.status - PLAYING, PAUSED, STOPPED, LIVE, PREVIEW
    * @param {string} playbackInfo.channel - Canale CasparCG
    * @param {string} playbackInfo.layer - Layer CasparCG
    * @param {number} playbackInfo.startTime - Timestamp di inizio riproduzione
@@ -32,7 +35,7 @@ const usePlaybackSync = () => {
     if (!itemId || !playbackInfo) return;
 
     const now = Date.now();
-    
+
     // Evita aggiornamenti troppo frequenti
     if (now - lastUpdateRef.current < 100) {
       if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
@@ -44,36 +47,108 @@ const usePlaybackSync = () => {
 
     lastUpdateRef.current = now;
 
-    console.log(`🔄 [PLAYBACK SYNC] Aggiornamento stato per ${itemId}:`, playbackInfo);
+    // CORREZIONE CRITICA: Determina il tipo di riproduzione basato su source e channel
+    let actualStatus = playbackInfo.status;
+    const isLiveEnvironment = playbackInfo.source === 'rundown' || playbackInfo.channel === 1;
+    const isPreviewEnvironment = playbackInfo.source === 'scalette' || playbackInfo.channel === 3;
+
+    // Converti status basato sull'ambiente
+    if (actualStatus === 'PLAYING') {
+      if (isLiveEnvironment) {
+        actualStatus = 'LIVE';
+      } else if (isPreviewEnvironment) {
+        actualStatus = 'PREVIEW';
+      }
+    }
+
+    console.log(`🔄 [PLAYBACK SYNC] Aggiornamento stato per ${itemId}:`, {
+      originalStatus: playbackInfo.status,
+      actualStatus,
+      source: playbackInfo.source,
+      channel: playbackInfo.channel,
+      isLiveEnvironment,
+      isPreviewEnvironment
+    });
 
     setPlayingItems(prev => {
       const newMap = new Map(prev);
-      
-      if (playbackInfo.status === 'STOPPED') {
+
+      if (actualStatus === 'STOPPED') {
         // Rimuovi l'elemento dalla lista di riproduzione
         newMap.delete(itemId);
       } else {
-        // Aggiorna o aggiungi l'elemento
+        // Aggiorna o aggiungi l'elemento con lo status corretto
         newMap.set(itemId, {
           ...playbackInfo,
+          status: actualStatus,
           lastUpdate: now
         });
       }
-      
+
       return newMap;
     });
 
-    // Gestisci gli elementi LIVE (in onda)
-    if (playbackInfo.status === 'LIVE' || playbackInfo.status === 'PLAYING') {
+    // CORREZIONE CRITICA: Gestisci separatamente LIVE e PREVIEW
+    if (actualStatus === 'LIVE') {
       setLiveItems(prev => new Set([...prev, itemId]));
-    } else if (playbackInfo.status === 'STOPPED') {
+      // Rimuovi da preview se era lì
+      setPreviewItems(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(itemId);
+        return newSet;
+      });
+    } else if (actualStatus === 'PREVIEW') {
+      setPreviewItems(prev => new Set([...prev, itemId]));
+      // NON aggiungere a liveItems - questa è la correzione principale
+    } else if (actualStatus === 'STOPPED') {
+      // Rimuovi da entrambi i set
       setLiveItems(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(itemId);
+        return newSet;
+      });
+      setPreviewItems(prev => {
         const newSet = new Set(prev);
         newSet.delete(itemId);
         return newSet;
       });
     }
   }, []);
+
+  /**
+   * PROBLEMA 2 FIX: Pulisce completamente lo stato di riproduzione di un elemento
+   * @param {string} itemId - ID dell'elemento da pulire
+   */
+  const clearPlaybackStatus = useCallback((itemId) => {
+    if (!itemId) return;
+
+    console.log(`🧹 [PLAYBACK SYNC] Pulizia stato per elemento: ${itemId}`);
+
+    // Rimuovi dalle mappe di stato
+    setPlayingItems(prev => {
+      const newMap = new Map(prev);
+      newMap.delete(itemId);
+      return newMap;
+    });
+
+    // Rimuovi dai set LIVE e PREVIEW
+    setLiveItems(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(itemId);
+      return newSet;
+    });
+
+    setPreviewItems(prev => {
+      const newSet = new Set(prev);
+      newSet.delete(itemId);
+      return newSet;
+    });
+
+    // Se era l'elemento NEXT, pulisci anche quello
+    if (nextItemId === itemId) {
+      setNextItemId(null);
+    }
+  }, [nextItemId]);
 
   /**
    * Imposta l'elemento successivo in coda
@@ -122,6 +197,15 @@ const usePlaybackSync = () => {
   }, [liveItems]);
 
   /**
+   * Verifica se un elemento è in preview
+   * @param {string} itemId - ID dell'elemento
+   * @returns {boolean}
+   */
+  const isItemPreview = useCallback((itemId) => {
+    return previewItems.has(itemId);
+  }, [previewItems]);
+
+  /**
    * Ottiene tutti gli elementi attualmente in riproduzione
    * @returns {Array} - Array di oggetti {itemId, playbackInfo}
    */
@@ -141,7 +225,7 @@ const usePlaybackSync = () => {
 
     setPlayingItems(prev => {
       const newMap = new Map();
-      
+
       for (const [itemId, playbackInfo] of prev.entries()) {
         if (now - playbackInfo.lastUpdate < staleThreshold) {
           newMap.set(itemId, playbackInfo);
@@ -149,20 +233,34 @@ const usePlaybackSync = () => {
           console.log(`🧹 [PLAYBACK SYNC] Rimozione stato obsoleto per ${itemId}`);
         }
       }
-      
+
       return newMap;
     });
 
     setLiveItems(prev => {
       const newSet = new Set();
-      
+
       for (const itemId of prev) {
         const playbackInfo = playingItems.get(itemId);
         if (playbackInfo && now - playbackInfo.lastUpdate < staleThreshold) {
           newSet.add(itemId);
         }
       }
-      
+
+      return newSet;
+    });
+
+    // CORREZIONE CRITICA: Cleanup anche per previewItems
+    setPreviewItems(prev => {
+      const newSet = new Set();
+
+      for (const itemId of prev) {
+        const playbackInfo = playingItems.get(itemId);
+        if (playbackInfo && now - playbackInfo.lastUpdate < staleThreshold) {
+          newSet.add(itemId);
+        }
+      }
+
       return newSet;
     });
   }, [playingItems]);
@@ -210,18 +308,21 @@ const usePlaybackSync = () => {
     playingItems: Array.from(playingItems.entries()),
     nextItemId,
     liveItems: Array.from(liveItems),
-    
+    previewItems: Array.from(previewItems), // CORREZIONE CRITICA: Aggiungi previewItems
+
     // Funzioni di controllo
     updatePlaybackStatus,
+    clearPlaybackStatus, // PROBLEMA 2 FIX: Aggiungi clearPlaybackStatus
     setNextItem,
-    
+
     // Funzioni di query
     getPlaybackStatus,
     isItemPlaying,
     isItemNext,
     isItemLive,
+    isItemPreview, // CORREZIONE CRITICA: Aggiungi isItemPreview
     getAllPlayingItems,
-    
+
     // Sincronizzazione
     syncWithOSC,
     cleanupStaleStates
