@@ -1202,6 +1202,10 @@ const ScaletteEditor = () => {
 
     return items.map(item => {
       try {
+        // CORREZIONE CRITICA: Verifica presenza campo notes prima della conversione
+        const originalNotes = item.data?.notes || '';
+        console.log(`🔄 Convertendo item "${item.name}" (${item.type}) - Notes originale: "${originalNotes}"`);
+
         // Clone profondo dell'item per evitare modifiche alla configurazione locale
         const clonedItem = JSON.parse(JSON.stringify(item));
 
@@ -1248,6 +1252,10 @@ const ScaletteEditor = () => {
           clonedItem.data.startTime = clonedItem.data.startTime || '00:00:00';
           clonedItem.data.duration = clonedItem.data.duration || '00:01:00';
           clonedItem.data.customName = clonedItem.data.customName || clonedItem.name || 'Elemento senza nome';
+
+          // CORREZIONE CRITICA: Assicurati che il campo notes sia preservato esplicitamente
+          clonedItem.data.notes = originalNotes;
+          console.log(`  ✅ Campo notes preservato: "${clonedItem.data.notes}"`);
 
           // Per elementi MEDIA, assicurati che clip sia presente
           if (clonedItem.type === 'MEDIA' && clonedItem.data.mediaDetails?.clipPath) {
@@ -1332,11 +1340,11 @@ const ScaletteEditor = () => {
         checkChannels(item.data);
         checkTimingMapping();
 
-        // Verifica campi essenziali per il calendario
-        const essentialFields = ['startTime', 'duration', 'customName'];
+        // Verifica campi essenziali per il calendario (incluso notes)
+        const essentialFields = ['startTime', 'duration', 'customName', 'notes'];
         essentialFields.forEach(field => {
-          if (item.data[field]) {
-            console.log(`  ✅ Campo essenziale ${field}: ${item.data[field]}`);
+          if (item.data[field] !== undefined) {
+            console.log(`  ✅ Campo essenziale ${field}: "${item.data[field]}"`);
           } else {
             console.log(`  ⚠️ Campo essenziale ${field} mancante`);
           }

@@ -27,6 +27,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import FiberManualRecordIcon from '@mui/icons-material/FiberManualRecord';
 import SourceIcon from '@mui/icons-material/Source'; // Icona per elementi esplosi
 import FilterListIcon from '@mui/icons-material/FilterList'; // Icona per filtro
+import ArticleIcon from '@mui/icons-material/Article'; // Icona per elementi STORY
 import { keyframes } from '@mui/system';
 import { useRundown } from '../../../contexts/RundownContext';
 import useRundownTimers from '../hooks/useRundownTimers';
@@ -444,6 +445,20 @@ const RundownList = ({
             // Verifica se l'elemento è esploso (ha sourceInfo)
             const isExploded = item.data && item.data.sourceInfo;
             const isMediaWithLinkedTemplate = item.type === 'MEDIA' && item.data.linkedTemplate && item.data.linkedTemplate.template;
+
+            // CORREZIONE CRITICA: Riconoscimento elementi STORY complessi
+            const isComplexStory = item.type === 'STORY' && (
+              (item.data.mediaDetails && item.data.mediaDetails.clipPath) ||
+              (item.data.templateDetails && item.data.templateDetails.templateFile) ||
+              (item.data.templatesDetails && item.data.templatesDetails.length > 0)
+            );
+
+            const hasMedia = item.type === 'STORY' && item.data.mediaDetails && item.data.mediaDetails.clipPath;
+            const hasTemplates = item.type === 'STORY' && (
+              (item.data.templateDetails && item.data.templateDetails.templateFile) ||
+              (item.data.templatesDetails && item.data.templatesDetails.length > 0)
+            );
+            const hasMultipleTemplates = item.type === 'STORY' && item.data.templatesDetails && item.data.templatesDetails.length > 1;
             // MODIFICA/AGGIUNTA START: Logica per itemBackgroundColor e leftBorderStyle
             let itemBackgroundColor = 'transparent';
             // Applica lo sfondo alternato solo se l'item non è né ON AIR né NEXT
@@ -489,9 +504,10 @@ const RundownList = ({
                 borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
                 backgroundColor: itemBackgroundColor,
                 borderLeft: item.isPlaying
-                  ? (item.type === 'MEDIA' ? '4px solid #4caf50' : '4px solid #2196f3')
-                  : (isMediaWithLinkedTemplate ? '4px solid #FFC107' : 'none'), // Bordo giallo per media con template
-                pl: item.isPlaying || isMediaWithLinkedTemplate ? 1 : 2,
+                  ? (item.type === 'MEDIA' ? '4px solid #4caf50' : item.type === 'STORY' ? '4px solid #9c27b0' : '4px solid #2196f3')
+                  : (isMediaWithLinkedTemplate ? '4px solid #FFC107' :
+                     isComplexStory ? '4px solid #ff9800' : 'none'), // Bordo arancione per STORY complessi
+                pl: item.isPlaying || isMediaWithLinkedTemplate || isComplexStory ? 1 : 2,
                 position: 'relative',
                 transition: 'all 0.3s ease',
                 boxShadow: item.isPlaying ? '0 0 8px rgba(255, 255, 255, 0.1)' : 'none',
@@ -582,27 +598,76 @@ const RundownList = ({
                 )}
                 {/* MODIFICA/AGGIUNTA END */}
 
-                {/* Icona del tipo di elemento */}
-                {item.type === 'MEDIA' ?
+                {/* Icona del tipo di elemento con supporto per STORY complessi */}
+                {item.type === 'MEDIA' ? (
                   <MovieIcon
                     fontSize="small"
                     sx={{
-                      mr: 0.5, // Ridotto margine
+                      mr: 0.5,
                       color: item.isPlaying ? '#4caf50' : (isMediaWithLinkedTemplate ? '#FFC107' : 'inherit'),
                       opacity: item.isPlaying ? 1 : 0.7,
                       flexShrink: 0,
                     }}
-                  /> :
+                  />
+                ) : item.type === 'STORY' ? (
+                  <Box sx={{ display: 'flex', alignItems: 'center', mr: 0.5, flexShrink: 0 }}>
+                    {/* Icona principale per STORY */}
+                    <ArticleIcon
+                      fontSize="small"
+                      sx={{
+                        color: item.isPlaying ? '#9c27b0' : (isComplexStory ? '#ff9800' : 'inherit'),
+                        opacity: item.isPlaying ? 1 : 0.7,
+                        mr: hasMedia || hasTemplates ? 0.25 : 0,
+                      }}
+                    />
+                    {/* Indicatori per componenti della STORY */}
+                    {hasMedia && (
+                      <MovieIcon
+                        fontSize="small"
+                        sx={{
+                          color: '#4caf50',
+                          opacity: 0.6,
+                          fontSize: '12px',
+                          mr: 0.25,
+                        }}
+                      />
+                    )}
+                    {hasTemplates && (
+                      <BrushIcon
+                        fontSize="small"
+                        sx={{
+                          color: '#2196f3',
+                          opacity: 0.6,
+                          fontSize: '12px',
+                          mr: hasMultipleTemplates ? 0.25 : 0,
+                        }}
+                      />
+                    )}
+                    {hasMultipleTemplates && (
+                      <Typography
+                        variant="caption"
+                        sx={{
+                          color: '#2196f3',
+                          fontSize: '10px',
+                          fontWeight: 'bold',
+                          opacity: 0.8,
+                        }}
+                      >
+                        {item.data.templatesDetails.length}
+                      </Typography>
+                    )}
+                  </Box>
+                ) : (
                   <BrushIcon
                     fontSize="small"
                     sx={{
-                      mr: 0.5, // Ridotto margine
+                      mr: 0.5,
                       color: item.isPlaying ? '#2196f3' : 'inherit',
                       opacity: item.isPlaying ? 1 : 0.7,
                       flexShrink: 0,
                     }}
                   />
-                }
+                )}
                 {/* Icona per template annidato */}
                 {isMediaWithLinkedTemplate && (
                     <Tooltip title={`Template Annidato: ${item.data.linkedTemplate.name || 'Non specificato'}`}>
@@ -680,6 +745,52 @@ const RundownList = ({
                     </Typography>
                   )}
 
+                  {/* CORREZIONE CRITICA: Visualizzazione dettagli per elementi STORY complessi */}
+                  {isComplexStory && (
+                    <Box sx={{ mt: 0.5 }}>
+                      {hasMedia && (
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            color: '#4caf50',
+                            fontSize: '0.7rem',
+                            display: 'block',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis'
+                          }}
+                          title={`Media: ${item.data.mediaDetails.clipPath}`}
+                        >
+                          📹 {item.data.mediaDetails.clipPath?.split('/').pop() || 'Media'}
+                        </Typography>
+                      )}
+                      {hasTemplates && (
+                        <Typography
+                          variant="caption"
+                          sx={{
+                            color: '#2196f3',
+                            fontSize: '0.7rem',
+                            display: 'block',
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis'
+                          }}
+                          title={
+                            hasMultipleTemplates
+                              ? `Template multipli: ${item.data.templatesDetails.map(t => t.templateFile?.split('/').pop()).join(', ')}`
+                              : `Template: ${item.data.templateDetails?.templateFile || item.data.templatesDetails?.[0]?.templateFile}`
+                          }
+                        >
+                          🎨 {hasMultipleTemplates
+                            ? `${item.data.templatesDetails.length} template`
+                            : (item.data.templateDetails?.templateFile?.split('/').pop() ||
+                               item.data.templatesDetails?.[0]?.templateFile?.split('/').pop() || 'Template')
+                          }
+                        </Typography>
+                      )}
+                    </Box>
+                  )}
+
                   {item.isPlaying && item.playingStartTime && (
                     <Typography
                       variant="caption"
@@ -704,8 +815,8 @@ const RundownList = ({
                 </Box>
               </Box>
 
-              {/* Note */}
-              <Tooltip title={item.data.note || ''}>
+              {/* Note - CORREZIONE CRITICA: Usa notes invece di note */}
+              <Tooltip title={item.data.notes || item.data.note || ''}>
                 <Box sx={{
                     width: '130px',
                     overflow: 'hidden',
@@ -716,7 +827,7 @@ const RundownList = ({
                     flexShrink: 0,
                     pr: 1, // padding right
                 }}>
-                    {item.data.note || ''}
+                    {item.data.notes || item.data.note || ''}
                 </Box>
               </Tooltip>
 
