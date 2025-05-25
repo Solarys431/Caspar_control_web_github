@@ -249,43 +249,73 @@ const usePreviewPlayer = (previewChannel = 3) => {
 
   // Funzione per gestire i controlli dei template grafici
   const handleTemplateControl = async (action, selectedItem = null, options = {}) => {
-    // Determina il canale e il layer da utilizzare per i template
+    // Determina il canale da utilizzare per i template
     const channel = actualPreviewChannel;
-    const layer = options.layer || 10; // Layer dedicato per i template nella preview
-    const cgLayer = options.cgLayer || 1; // CG Layer di default
 
     // Opzioni per il comando
     const commandOptions = previewSessionId ?
       { isPreview: true, sessionId: previewSessionId } :
       {};
 
-    // Determina il template da utilizzare
+    // Determina il template da utilizzare e i suoi parametri
     let templateToUse = previewTemplate;
     let templateData = null;
     let templateConfig = null;
+    let layer = options.layer || 10; // Layer di default
+    let cgLayer = options.cgLayer || 1; // CG Layer di default
 
     // Se abbiamo un elemento selezionato, prova a estrarre il template da lì
     if (!templateToUse && selectedItem) {
-      if (selectedItem.type === 'TEMPLATE' && selectedItem.data?.template) {
-        templateToUse = selectedItem.data.template;
-        templateData = selectedItem.data.templateData;
-        templateConfig = selectedItem.data;
+      if (selectedItem.type === 'TEMPLATE' && selectedItem.data?.templateDetails) {
+        templateToUse = selectedItem.data.templateDetails.templateFile;
+        templateData = selectedItem.data.templateDetails.instanceData;
+        templateConfig = selectedItem.data.templateDetails;
+        // Usa il layer configurato per il template
+        layer = selectedItem.data.templateDetails.casparcgConfig?.layer || selectedItem.data.casparcgConfig?.layer || 10;
+        cgLayer = selectedItem.data.templateDetails.casparcgConfig?.cgLayer || 1;
       } else if (selectedItem.type === 'STORY') {
         // Per le storie, usa il template specificato o il primo disponibile
-        const templateIndex = options.templateIndex || 0;
+        const templateIndex = options.templateIndex !== undefined ? options.templateIndex : 0;
+
+        console.log(`[DEBUG] Template index utilizzato: ${templateIndex}`);
+        console.log(`[DEBUG] Templates disponibili:`, selectedItem.data?.templatesDetails);
 
         if (selectedItem.data?.templateDetails?.templateFile) {
           templateToUse = selectedItem.data.templateDetails.templateFile;
-          templateData = selectedItem.data.templateDetails.templateData;
+          templateData = selectedItem.data.templateDetails.instanceData;
           templateConfig = selectedItem.data.templateDetails;
+          layer = selectedItem.data.templateDetails.casparcgConfig?.layer || selectedItem.data.casparcgConfig?.layer || 10;
+          cgLayer = selectedItem.data.templateDetails.casparcgConfig?.cgLayer || 1;
         } else if (selectedItem.data?.templatesDetails && selectedItem.data.templatesDetails.length > templateIndex) {
           const selectedTemplate = selectedItem.data.templatesDetails[templateIndex];
           templateToUse = selectedTemplate.templateFile;
-          templateData = selectedTemplate.templateData;
+          templateData = selectedTemplate.instanceData;
           templateConfig = selectedTemplate;
+          // Usa il layer configurato per questo template specifico
+          layer = selectedTemplate.casparcgConfig?.layer || selectedItem.data.casparcgConfig?.layer || 10;
+          cgLayer = selectedTemplate.casparcgConfig?.cgLayer || 1;
+
+          console.log(`[DEBUG] Template selezionato (index ${templateIndex}):`, {
+            templateFile: selectedTemplate.templateFile,
+            layer: layer,
+            cgLayer: cgLayer,
+            casparcgConfig: selectedTemplate.casparcgConfig
+          });
         }
       }
     }
+
+    // Debug: log dei parametri utilizzati
+    console.log(`[DEBUG] Template control - Action: ${action}`, {
+      templateToUse,
+      layer,
+      cgLayer,
+      channel,
+      selectedItem: selectedItem?.type,
+      templateIndex: options.templateIndex,
+      templatesDetails: selectedItem?.data?.templatesDetails,
+      selectedTemplate: selectedItem?.data?.templatesDetails?.[options.templateIndex || 0]
+    });
 
     if (!templateToUse) {
       console.error("Nessun template disponibile per l'operazione:", action);
@@ -358,7 +388,7 @@ const usePreviewPlayer = (previewChannel = 3) => {
   };
 
   // Funzione per gestire il controllo di riproduzione
-  const handlePlaybackControl = (action) => {
+  const handlePlaybackControl = (action, options = {}) => {
     // Determina il canale e il layer da utilizzare
     const channel = actualPreviewChannel;
     const layer = actualPreviewLayer;
@@ -607,6 +637,59 @@ const usePreviewPlayer = (previewChannel = 3) => {
             .catch(error => {
               console.error(`Errore durante la pulizia del canale: ${error.message || JSON.stringify(error)}`);
             });
+        }
+        break;
+
+      case 'trim':
+        // Trim - Posiziona il media al frame specificato usando LOAD + SEEK
+        if (previewMedia && typeof sendCommand === 'function' && options.targetFrame !== undefined) {
+          const mediaPath = typeof previewMedia === 'string' ? previewMedia : previewMedia.path;
+          const targetFrame = parseInt(options.targetFrame, 10);
+
+          if (targetFrame >= 0) {
+            console.log(`Trim media ${mediaPath} al frame ${targetFrame}`);
+
+            // Sequenza LOAD + SEEK per posizionamento preciso
+            sendCommand(`LOAD ${channel}-${layer} "${mediaPath}"`, commandOptions)
+              .then(() => {
+                console.log(`Media caricato, posizionamento al frame ${targetFrame}`);
+                // Attendi un momento per assicurarsi che il LOAD sia completato
+                return new Promise(resolve => setTimeout(resolve, 100));
+              })
+              .then(() => {
+                // Usa CALL SEEK per posizionarsi al frame specifico
+                return sendCommand(`CALL ${channel}-${layer} SEEK ${targetFrame}`, commandOptions);
+              })
+              .then(() => {
+                console.log(`Trim completato: media posizionato al frame ${targetFrame}`);
+                setPlaybackStatus('PAUSED'); // Il media è caricato ma non in riproduzione
+              })
+              .catch(error => {
+                console.error(`Errore durante il trim: ${error.message || JSON.stringify(error)}`);
+
+                // Fallback: usa PLAY + SEEK + PAUSE se LOAD fallisce
+                console.log('Tentativo fallback con PLAY + SEEK + PAUSE');
+                sendCommand(`PLAY ${channel}-${layer} "${mediaPath}" SEEK ${targetFrame}`, commandOptions)
+                  .then(() => {
+                    // Attendi un momento e poi metti in pausa
+                    return new Promise(resolve => setTimeout(resolve, 100));
+                  })
+                  .then(() => {
+                    return sendCommand(`PAUSE ${channel}-${layer}`, commandOptions);
+                  })
+                  .then(() => {
+                    console.log(`Trim fallback completato: media posizionato al frame ${targetFrame}`);
+                    setPlaybackStatus('PAUSED');
+                  })
+                  .catch(fallbackError => {
+                    console.error(`Errore anche nel fallback trim: ${fallbackError.message || JSON.stringify(fallbackError)}`);
+                  });
+              });
+          } else {
+            console.warn(`Frame target non valido per trim: ${targetFrame}`);
+          }
+        } else {
+          console.warn('Impossibile eseguire trim: media non disponibile o frame target non specificato');
         }
         break;
 

@@ -27,8 +27,7 @@ const useOscData = (channel, layer) => {
 
     // Funzione per aggiornare i dati OSC
     const updateOscData = () => {
-      const channelLayerKey = `${channel}-${layer}`;
-      const oscData = getOscData ? getOscData(channelLayerKey) : null;
+      const oscData = getOscData ? getOscData(channel, layer) : null;
 
       // Aggiorna il timecode
       const currentTimecode = getTimecode ? getTimecode(channel, layer) : '00:00:00:00';
@@ -51,39 +50,68 @@ const useOscData = (channel, layer) => {
 
         // Log dello stato OSC completo per debug
         console.log(`useOscData (Preview ${channel}-${layer}): Stato OSC completo:`, oscData);
+
+        // Log dettagliato delle proprietà OSC
+        if (oscData) {
+          console.log(`useOscData (Preview ${channel}-${layer}): OSC Properties:`, {
+            paused: oscData.paused,
+            frame: oscData.frame,
+            length: oscData.length,
+            timecode: oscData.timecode,
+            keys: Object.keys(oscData)
+          });
+        }
       }
 
       if (mediaLength > 0) {
         setLength(mediaLength);
       }
 
-      // Aggiorna lo stato di pausa
-      if (oscData && oscData.paused !== undefined) {
+      // Aggiorna lo stato di pausa con logica migliorata
+      if (oscData && typeof oscData.paused === 'boolean') {
         setPaused(oscData.paused);
-      }
-
-      // Aggiorna il progresso
-      if (currentTimecode !== '00:00:00:00' && mediaLength > 0) {
-        const currentFrames = timecodeToFrames(currentTimecode);
-        const calculatedProgress = Math.min(100, (currentFrames / mediaLength) * 100);
-
-        // Aggiorna solo se il progresso è cambiato significativamente (evita log eccessivi)
-        if (Math.abs(calculatedProgress - progress) > 0.5) {
-          setProgress(calculatedProgress);
-          if (channel === 3 && layer === 1) {
-            console.log(`useOscData (Preview ${channel}-${layer}) Progresso: ${calculatedProgress.toFixed(2)}% (${currentFrames}/${mediaLength})`);
-          }
-        } else {
-          // Aggiorna comunque il valore anche se non logghiamo
-          setProgress(calculatedProgress);
+        if (channel === 3 && layer === 1) {
+          console.log(`useOscData (Preview ${channel}-${layer}): Stato pausa da OSC: ${oscData.paused}`);
         }
       } else {
-        // Reset del progresso se non abbiamo dati validi
-        if (progress !== 0) {
-          setProgress(0);
+        // Logica di fallback: se non abbiamo dati di pausa espliciti
+        // Considera in pausa se il timecode è fermo a 00:00:00:00
+        const inferredPaused = currentTimecode === '00:00:00:00';
+        setPaused(inferredPaused);
+        if (channel === 3 && layer === 1) {
+          console.log(`useOscData (Preview ${channel}-${layer}): Stato pausa inferito: ${inferredPaused} (TC: ${currentTimecode})`);
+        }
+      }
+
+      // Aggiorna il progresso con calcolo più robusto
+      if (currentTimecode !== '00:00:00:00') {
+        const currentFrames = timecodeToFrames(currentTimecode);
+
+        if (mediaLength > 0) {
+          // Calcolo normale con durata nota
+          const calculatedProgress = Math.min(100, Math.max(0, (currentFrames / mediaLength) * 100));
+          setProgress(calculatedProgress);
+
+          // Log dettagliato per debug del canale preview
           if (channel === 3 && layer === 1) {
-            console.log(`useOscData (Preview ${channel}-${layer}) Reset progresso a 0. Timecode: ${currentTimecode}, Length: ${mediaLength}`);
+            console.log(`[useOscData] Progresso aggiornato: ${calculatedProgress.toFixed(2)}% (Frame: ${currentFrames}/${mediaLength}, TC: ${currentTimecode})`);
           }
+        } else {
+          // Durata sconosciuta: mostra progresso simbolico per indicare riproduzione attiva
+          // Usa un progresso basato sui frame correnti con un massimo del 50%
+          const symbolicProgress = currentFrames > 0 ? Math.min(50, (currentFrames / 1000) * 100) : 5;
+          setProgress(symbolicProgress);
+
+          // Log per durata sconosciuta
+          if (channel === 3 && layer === 1) {
+            console.log(`[useOscData] Durata sconosciuta - progresso simbolico: ${symbolicProgress.toFixed(2)}% (Frame: ${currentFrames}, TC: ${currentTimecode})`);
+          }
+        }
+      } else {
+        // Nessun timecode valido - reset progresso
+        setProgress(0);
+        if (channel === 3 && layer === 1) {
+          console.log(`[useOscData] Reset progresso - TC: ${currentTimecode}, Length: ${mediaLength}`);
         }
       }
 
@@ -115,6 +143,9 @@ const useOscData = (channel, layer) => {
       const remainingFramesCount = remainingFrames % fps;
 
       return `${remainingHours.toString().padStart(2, '0')}:${remainingMinutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}:${remainingFramesCount.toString().padStart(2, '0')}`;
+    } else if (timecode !== '00:00:00:00' && length === 0) {
+      // Durata sconosciuta ma media in riproduzione
+      return '--:--:--:--';
     }
     return '00:00:00:00';
   };

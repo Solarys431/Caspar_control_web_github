@@ -12,7 +12,6 @@ import {
   Collapse,
   Button
 } from '@mui/material';
-import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import FullscreenIcon from '@mui/icons-material/Fullscreen';
 import FullscreenExitIcon from '@mui/icons-material/FullscreenExit';
 import PushPinIcon from '@mui/icons-material/PushPin';
@@ -23,6 +22,8 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
 import Draggable from 'react-draggable';
+import { Resizable } from 'react-resizable';
+import 'react-resizable/css/styles.css';
 import PreviewPlayer from '../../../components/PreviewPlayer';
 import PlaybackControls from './PlaybackControls';
 
@@ -66,6 +67,7 @@ const PreviewSection = ({
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isPopOut, setIsPopOut] = useState(false);
   const [showDetails, setShowDetails] = useState(true);
+  const [windowSize, setWindowSize] = useState({ width: 600, height: 400 });
 
   // Stati per i campi IN e OUT
   const [inPoint, setInPoint] = useState('00:00:00:00');
@@ -111,12 +113,29 @@ const PreviewSection = ({
 
   // Gestione del pop-out
   const handleTogglePopOut = () => {
-    setIsPopOut(!isPopOut);
+    const newPopOutState = !isPopOut;
+    setIsPopOut(newPopOutState);
+
+    // Se stiamo chiudendo il pop-out, forza la reinizializzazione del WebRTC nella finestra principale
+    if (!newPopOutState) {
+      console.log('[PreviewSection] Pop-out chiuso, reinizializzazione WebRTC in corso...');
+      // Piccolo delay per permettere al DOM di aggiornarsi
+      setTimeout(() => {
+        // Forza il re-render del PreviewPlayer nella finestra principale
+        // Questo trigger un nuovo useEffect nel PreviewPlayer
+        window.dispatchEvent(new Event('webrtc-reinit'));
+      }, 100);
+    }
   };
 
   // Gestione della visualizzazione dei dettagli
   const handleToggleDetails = () => {
     setShowDetails(!showDetails);
+  };
+
+  // Gestione del ridimensionamento della finestra
+  const handleResize = (_, { size }) => {
+    setWindowSize(size);
   };
 
   return (
@@ -201,33 +220,6 @@ const PreviewSection = ({
               webrtcSignalingUrl="http://127.0.0.1:8889"
               showLatency
             />
-
-            {/* Overlay con nome del media */}
-            {previewMedia && (
-              <Box sx={{
-                position: 'absolute',
-                bottom: 0,
-                left: 0,
-                right: 0,
-                backgroundColor: 'rgba(0, 0, 0, 0.7)',
-                p: 0.5,
-                display: 'flex',
-                alignItems: 'center'
-              }}>
-                <PlayArrowIcon color="success" sx={{ mr: 0.5, fontSize: '1rem' }} />
-                <Typography variant="caption" sx={{
-                  flexGrow: 1,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                  color: 'white'
-                }}>
-                  {typeof previewMedia === 'string'
-                    ? previewMedia
-                    : previewMedia.path}
-                </Typography>
-              </Box>
-            )}
           </Box>
 
           {/* Barra di avanzamento */}
@@ -326,26 +318,35 @@ const PreviewSection = ({
         </Collapse>
       </Paper>
 
-      {/* Finestra flottante draggable per la modalità pop-out */}
+      {/* Finestra flottante draggable e ridimensionabile per la modalità pop-out */}
       {isPopOut && (
         <Draggable
           handle=".drag-handle"
           defaultPosition={{ x: 100, y: 100 }}
           cancel=".no-drag"
         >
-          <Paper
-            elevation={8}
-            sx={{
-              position: 'fixed',
-              width: '600px',
-              maxWidth: '90vw',
-              maxHeight: '90vh',
-              zIndex: 1300,
-              overflow: 'hidden',
-              display: 'flex',
-              flexDirection: 'column'
-            }}
+          <Resizable
+            width={windowSize.width}
+            height={windowSize.height}
+            onResize={handleResize}
+            minConstraints={[400, 300]}
+            maxConstraints={[1200, 800]}
+            resizeHandles={['se', 'sw', 'ne', 'nw', 's', 'e', 'w', 'n']}
           >
+            <Paper
+              elevation={8}
+              sx={{
+                position: 'fixed',
+                width: `${windowSize.width}px`,
+                height: `${windowSize.height}px`,
+                maxWidth: '90vw',
+                maxHeight: '90vh',
+                zIndex: 1300,
+                overflow: 'hidden',
+                display: 'flex',
+                flexDirection: 'column'
+              }}
+            >
             {/* Header draggable */}
             <Box
               className="drag-handle"
@@ -457,6 +458,7 @@ const PreviewSection = ({
               </Grid>
             </Box>
           </Paper>
+          </Resizable>
         </Draggable>
       )}
     </>

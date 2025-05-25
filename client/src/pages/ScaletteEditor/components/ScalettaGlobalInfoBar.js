@@ -12,6 +12,7 @@ import SaveIcon from '@mui/icons-material/Save';
 import PeopleIcon from '@mui/icons-material/People';
 import SettingsIcon from '@mui/icons-material/Settings';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import LiveClock from './LiveClock';
 
 /**
  * Componente per la barra delle informazioni globali della scaletta
@@ -109,6 +110,11 @@ const ScalettaGlobalInfoBar = ({
             color="warning"
           />
         )}
+      </Box>
+
+      {/* Sezione centrale: Orologio */}
+      <Box sx={{ mx: 2 }}>
+        <LiveClock />
       </Box>
 
       {/* Sezione destra: Pulsanti azioni */}

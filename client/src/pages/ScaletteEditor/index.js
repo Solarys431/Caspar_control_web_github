@@ -42,8 +42,7 @@ import ScalettaTableToolbar from './components/ScalettaTableToolbar';
 import ItemEditPanel from './components/ItemEditPanel';
 // import PlaybackControls from './components/PlaybackControls';
 import ItemContextControls from './components/ItemContextControls';
-import ContextualInfoPanel from './components/ContextualInfoPanel';
-import AdvancedControls from './components/AdvancedControls';
+import ExtendedControls from './components/ExtendedControls';
 import WeekDaySelectDialog from './components/WeekDaySelectDialog';
 
 // Stili CSS
@@ -443,12 +442,21 @@ const ScaletteEditor = () => {
       const channel = previewChannel;
 
       // Verifica che tutti i parametri necessari siano definiti
-      const layer = casparcgConfig.layer;
+      const layer = templateDetails.casparcgConfig?.layer || casparcgConfig.layer;
       const cgLayer = templateDetails.casparcgConfig?.cgLayer || 1;
       const templateName = templateDetails.templateFile;
       const data = templateDetails.instanceData;
       const playOnLoad = templateDetails.casparcgConfig?.playOnLoad !== undefined ?
                          templateDetails.casparcgConfig.playOnLoad : true;
+
+      // Debug: log dei layer utilizzati
+      console.log(`[DEBUG] Template layer configuration:`, {
+        templateDetailsLayer: templateDetails.casparcgConfig?.layer,
+        casparcgConfigLayer: casparcgConfig.layer,
+        finalLayer: layer,
+        cgLayer: cgLayer,
+        templateName: templateName
+      });
 
       if (typeof layer === 'undefined' || layer === null) {
         console.error("Impossibile riprodurre il template: layer non definito");
@@ -536,7 +544,7 @@ const ScaletteEditor = () => {
       const channel = previewChannel;
 
       // Verifica che layer e cgLayer siano definiti
-      const layer = casparcgConfig.layer;
+      const layer = templateDetails.casparcgConfig?.layer || casparcgConfig.layer;
       const cgLayer = templateDetails.casparcgConfig?.cgLayer || 1;
 
       if (typeof layer === 'undefined' || layer === null) {
@@ -605,7 +613,7 @@ const ScaletteEditor = () => {
       const channel = casparcgConfig.channel || previewChannel;
 
       // Verifica che layer e cgLayer siano definiti
-      const layer = casparcgConfig.layer;
+      const layer = templateDetails.casparcgConfig?.layer || casparcgConfig.layer;
       const cgLayer = templateDetails.casparcgConfig?.cgLayer || 1;
 
       if (typeof layer === 'undefined' || layer === null) {
@@ -711,8 +719,8 @@ const ScaletteEditor = () => {
           rundownContext.addTemplate(templateData);
           successCount++;
         } else if (item.type === 'STORY') {
-          // Per le storie, verifichiamo se hanno un media o un template associato
-          const { customName, originalName, timing, casparcgConfig, mediaDetails, templateDetails } = item.data;
+          // Per le storie, verifichiamo se hanno un media o template associati
+          const { customName, originalName, timing, casparcgConfig, mediaDetails, templateDetails, templatesDetails } = item.data;
 
           // Se la storia ha un media associato, lo inviamo al rundown
           if (mediaDetails && mediaDetails.clipPath) {
@@ -736,8 +744,37 @@ const ScaletteEditor = () => {
             successCount++;
           }
 
-          // Se la storia ha un template associato, lo inviamo al rundown
-          if (templateDetails && templateDetails.templateFile) {
+          // Se la storia ha template multipli (nuovo formato), li inviamo tutti al rundown
+          if (templatesDetails && templatesDetails.length > 0) {
+            templatesDetails.forEach((templateDetail, index) => {
+              if (templateDetail.templateFile) {
+                // Usa il layer configurato dall'utente se presente
+                const configuredLayer = templateDetail.casparcgConfig?.layer;
+                const layerToUse = configuredLayer || 20;
+
+                const templateData = {
+                  template: templateDetail.templateFile,
+                  channel: templateDetail.casparcgConfig?.channel || casparcgConfig.channel || 1,
+                  layer: layerToUse,
+                  cgLayer: templateDetail.casparcgConfig?.cgLayer || 1,
+                  playOnLoad: templateDetail.casparcgConfig?.playOnLoad !== undefined ? templateDetail.casparcgConfig.playOnLoad : true,
+                  data: templateDetail.instanceData || {},
+                  customName: `${customName || originalName} - Template ${index + 1}`,
+                  startTime: timing.startTime || '00:00:00',
+                  duration: timing.duration || '00:00:10',
+                  location: `CH${templateDetail.casparcgConfig?.channel || casparcgConfig.channel || 1}-L${layerToUse}`,
+                  notes: item.data.notes || '',
+                  autoRemove: templateDetail.autoRemove || false
+                };
+
+                console.log(`Invio template ${index + 1} della storia al rundown:`, templateData);
+                rundownContext.addTemplate(templateData);
+                successCount++;
+              }
+            });
+          }
+          // Se la storia ha un template associato (vecchio formato), lo inviamo al rundown
+          else if (templateDetails && templateDetails.templateFile) {
             const templateData = {
               template: templateDetails.templateFile,
               channel: casparcgConfig.channel || 1,
@@ -759,7 +796,7 @@ const ScaletteEditor = () => {
           }
 
           // Se la storia non ha né media né template, la saltiamo
-          if (!mediaDetails?.clipPath && !templateDetails?.templateFile) {
+          if (!mediaDetails?.clipPath && !templatesDetails?.length && !templateDetails?.templateFile) {
             console.log("Storia senza media o template associati, saltata");
           }
         }
@@ -1014,9 +1051,10 @@ const ScaletteEditor = () => {
             const templateDetail = item.data.templatesDetails[index];
 
             if (templateDetail.templateFile) {
-              // Assicurati che ogni template abbia un layer diverso per evitare conflitti
-              const baseLayer = templateDetail.casparcgConfig?.layer || 20;
-              const uniqueLayer = baseLayer + index; // Ogni template su un layer diverso
+              // Usa il layer configurato dall'utente se presente, altrimenti calcola un layer unico per evitare conflitti
+              const configuredLayer = templateDetail.casparcgConfig?.layer;
+              const baseLayer = configuredLayer || 20;
+              const uniqueLayer = configuredLayer || (baseLayer + index); // Usa il layer configurato o calcola uno unico
 
               // Crea un oggetto template con i dati del template corrente
               const templateItem = {
@@ -1144,6 +1182,11 @@ const ScaletteEditor = () => {
         // Ferma tutti i template associati
         item.data.templatesDetails.forEach((templateDetail, index) => {
           if (templateDetail.templateFile) {
+            // Usa il layer configurato dall'utente se presente, altrimenti usa il layer di default
+            const configuredLayer = templateDetail.casparcgConfig?.layer;
+            const defaultLayer = 20;
+            const layerToUse = configuredLayer || defaultLayer;
+
             // Crea un oggetto template con i dati del template corrente
             const templateItem = {
               ...item,
@@ -1153,11 +1196,12 @@ const ScaletteEditor = () => {
                 template: templateDetail.templateFile,
                 templateDetails: {
                   ...templateDetail,
-                  casparcgConfig: templateDetail.casparcgConfig || {
-                    channel: item.data.casparcgConfig?.channel || 1,
-                    layer: 20,
-                    cgLayer: 1,
-                    playOnLoad: true
+                  casparcgConfig: {
+                    ...templateDetail.casparcgConfig,
+                    channel: templateDetail.casparcgConfig?.channel || item.data.casparcgConfig?.channel || 1,
+                    layer: layerToUse,
+                    cgLayer: templateDetail.casparcgConfig?.cgLayer || 1,
+                    playOnLoad: templateDetail.casparcgConfig?.playOnLoad !== undefined ? templateDetail.casparcgConfig.playOnLoad : true
                   }
                 }
               }
@@ -1584,63 +1628,52 @@ const ScaletteEditor = () => {
                   <ItemContextControls
                     selectedItem={scalettaItems.selectedItemIndex !== -1 ? scalettaItems.scalettaItems[scalettaItems.selectedItemIndex] : null}
                     playbackStatus={previewPlayer.playbackStatus}
-                    currentTimecode={previewPlayer.currentTimecode}
-                    totalDuration={previewPlayer.previewMedia ? previewPlayer.oscData?.length?.timecode || '00:00:00:00' : '00:00:00:00'}
-                    progressValue={previewPlayer.progressValue}
-                    onPlaybackControl={previewPlayer.handlePlaybackControl}
-                    onTake={handlePlaySelected}
-                    autoMode={autoMode}
-                    onToggleAutoMode={handleToggleAutoMode}
-                    transitionType={transitionType}
-                    onTransitionChange={handleTransitionChange}
+                    previewChannel={previewPlayer.previewChannel}
+                    previewLayer={previewPlayer.previewLayer}
+                    onUpdateItem={(itemId, updates) => {
+                      console.log('[ScaletteEditor] Richiesta aggiornamento item:', { itemId, updates });
+
+                      // Trova l'item corrente e aggiorna i suoi dati
+                      const currentItem = scalettaItems.scalettaItems.find(item => item.id === itemId);
+                      if (currentItem) {
+                        console.log('[ScaletteEditor] Item trovato, dati attuali:', currentItem);
+
+                        const updatedItem = {
+                          ...currentItem,
+                          data: updates
+                        };
+
+                        console.log('[ScaletteEditor] Item aggiornato:', updatedItem);
+                        scalettaItems.updateItem(updatedItem);
+                        console.log('[ScaletteEditor] updateItem chiamato, scaletta aggiornata');
+                      } else {
+                        console.warn('[ScaletteEditor] Item non trovato nella scaletta:', itemId);
+                      }
+                    }}
                   />
                 </Box>
               </Paper>
             </Grid>
 
-            {/* Modulo A.1.3: Controlli Avanzati */}
-            <Grid item xs={12} md={3} sx={{ height: '100%' }}>
-              <AdvancedControls
+            {/* Modulo A.1.3 e A.1.4: Controlli Estesi (2 colonne) */}
+            <Grid item xs={12} md={6} sx={{ height: '100%' }}>
+              <ExtendedControls
                 selectedItem={scalettaItems.selectedItemIndex !== -1 ? scalettaItems.scalettaItems[scalettaItems.selectedItemIndex] : null}
+                nextItems={
+                  scalettaItems.selectedItemIndex !== -1 && scalettaItems.selectedItemIndex < scalettaItems.scalettaItems.length - 1
+                    ? scalettaItems.scalettaItems.slice(scalettaItems.selectedItemIndex + 1, scalettaItems.selectedItemIndex + 5)
+                    : []
+                }
                 onPlaybackControl={previewPlayer.handlePlaybackControl}
-                onTemplateControl={(action, selectedItem) => previewPlayer.handleTemplateControl(action, selectedItem)}
+                onTemplateControl={(action, selectedItem, options) => previewPlayer.handleTemplateControl(action, selectedItem, options)}
                 disabled={!connected}
-              />
-            </Grid>
-
-            {/* Modulo A.1.4: Info Contestuali */}
-            <Grid item xs={12} md={3} sx={{ height: '100%' }}>
-              <Paper
-                elevation={1}
-                sx={{
-                  height: '100%',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  overflow: 'hidden',
+                remainingTime={previewPlayer.remainingTime}
+                systemLogs={systemLogs}
+                oscData={previewPlayer.previewOscData || {}}
+                onSelectItem={(item) => {
+                  scalettaItems.selectItemById(item.id);
                 }}
-              >
-
-                <Box sx={{ flexGrow: 1, overflow: 'hidden' }}>
-                  <ContextualInfoPanel
-                    selectedItem={scalettaItems.selectedItemIndex !== -1 ? scalettaItems.scalettaItems[scalettaItems.selectedItemIndex] : null}
-                    nextItems={
-                      scalettaItems.selectedItemIndex !== -1 && scalettaItems.selectedItemIndex < scalettaItems.scalettaItems.length - 1
-                        ? scalettaItems.scalettaItems.slice(scalettaItems.selectedItemIndex + 1, scalettaItems.selectedItemIndex + 5)
-                        : []
-                    }
-                    remainingTime={previewPlayer.remainingTime}
-                    systemLogs={systemLogs}
-                    oscData={previewPlayer.previewOscData || {}}
-                    onSelectItem={(item) => {
-                      scalettaItems.selectItemById(item.id);
-                    }}
-                    onExpandPanel={() => {
-                      // Implementazione futura: espansione del pannello info
-                      console.log('Espansione pannello info richiesta');
-                    }}
-                  />
-                </Box>
-              </Paper>
+              />
             </Grid>
           </Grid>
         </Box>

@@ -36,3 +36,5 @@ yarn-error.log*
 # Local development
 .eslintcache
 debug.log
+
+/backup
