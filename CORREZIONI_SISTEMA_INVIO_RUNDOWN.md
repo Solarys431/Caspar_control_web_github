@@ -11,7 +11,7 @@
 **Correzioni implementate:**
 1. **Filtro unicità elementi** in `handleConfirmSendToRundown`:
    ```javascript
-   const uniqueItems = items.filter((item, index, self) => 
+   const uniqueItems = items.filter((item, index, self) =>
      index === self.findIndex(i => i.id === item.id)
    );
    ```
@@ -172,6 +172,149 @@ Per monitorare eventuali problemi futuri:
 
 ---
 
-**Status:** ✅ **CORREZIONI IMPLEMENTATE E TESTATE**
+## 🔧 **AGGIORNAMENTO: CORREZIONE SISTEMA SOVRASCRITTURA**
+
+### **PROBLEMA CRITICO RISOLTO: Sistema di Sovrascrittura Non Funzionante ✅**
+
+**Causa identificata:**
+- Le opzioni `overwriteAll` e `skipConflicts` venivano ignorate nel codice di invio
+- Il sistema chiamava sempre `addMedia`, `addTemplate`, `addStory` invece di verificare conflitti
+- Mancanza di logica per utilizzare `updateItem` e `updateTemplate` per sovrascritture
+
+**Correzioni implementate:**
+
+#### 1. **Gestione Conflitti Completa in `handleConfirmSendToRundown`**
+```javascript
+// Crea mappa conflitti per accesso rapido
+const conflictMap = new Map();
+conflicts.forEach(conflict => {
+  conflictMap.set(conflict.item.id, conflict.existingItem);
+});
+
+// Verifica conflitto per ogni elemento
+const existingItem = conflictMap.get(item.id);
+const hasConflict = !!existingItem;
+
+// Gestione opzioni utente
+if (hasConflict) {
+  if (options.skipConflicts && !options.overwriteAll) {
+    skippedCount++;
+    return; // Salta elemento
+  } else if (options.overwriteAll) {
+    // Procedi con sovrascrittura
+  }
+}
+```
+
+#### 2. **Logica Sovrascrittura per Ogni Tipo di Elemento**
+
+**MEDIA:**
+```javascript
+if (hasConflict && options.overwriteAll) {
+  const updatedMediaData = { ...mediaData, id: existingItem.id };
+  rundownContext.updateItem(existingItem.id, updatedMediaData);
+  overwrittenCount++;
+} else {
+  rundownContext.addMedia(mediaData);
+}
+```
+
+**TEMPLATE:**
+```javascript
+if (hasConflict && options.overwriteAll) {
+  const updatedTemplateData = { ...templateData, id: existingItem.id };
+  rundownContext.updateTemplate(existingItem.id, updatedTemplateData);
+  overwrittenCount++;
+} else {
+  rundownContext.addTemplate(templateData);
+}
+```
+
+**STORY:**
+```javascript
+if (hasConflict && options.overwriteAll) {
+  const updatedStoryData = { ...storyData, id: existingItem.id };
+  rundownContext.updateItem(existingItem.id, updatedStoryData);
+  overwrittenCount++;
+} else {
+  rundownContext.addStory(storyData);
+}
+```
+
+#### 3. **Debug Dettagliato per Rilevamento Conflitti**
+- Logging completo in `SendToRundownDialog` per analisi conflitti
+- Tracciamento elementi esistenti vs nuovi
+- Verifica chiavi di confronto (nome, file, template)
+
+#### 4. **Statistiche Complete**
+```javascript
+console.log(`📊 RIEPILOGO INVIO CON GESTIONE CONFLITTI:`);
+console.log(`   - Elementi ricevuti: ${items.length}`);
+console.log(`   - Elementi inviati con successo: ${successCount}`);
+console.log(`   - Elementi saltati (conflitti): ${skippedCount}`);
+console.log(`   - Elementi sovrascritti: ${overwrittenCount}`);
+console.log(`   - Conflitti gestiti: ${skippedCount + overwrittenCount}`);
+```
+
+### **🧪 COME TESTARE LA CORREZIONE SOVRASCRITTURA**
+
+#### **Test Scenario 1: Sovrascrittura Elementi**
+1. **Crea elemento** nella scaletta (es. "Test Media")
+2. **Invia al rundown** la prima volta
+3. **Modifica elemento** nella scaletta (cambia nome, timing, etc.)
+4. **Seleziona elemento modificato** e clicca "Rundown"
+5. **Verifica dialogo** mostra conflitto rilevato
+6. **Abilita "Sovrascrivi tutti gli elementi in conflitto"**
+7. **Conferma invio** e verifica nei log:
+   ```
+   🔍 Conflitto rilevato: SÌ
+   🔄 SOVRASCRITTURA MEDIA: Aggiornamento elemento esistente
+   ✅ Media sovrascritto con successo
+   ```
+8. **Verifica rundown** contiene elemento aggiornato, non duplicato
+
+#### **Test Scenario 2: Salta Conflitti**
+1. **Ripeti steps 1-5** del Test 1
+2. **Abilita "Salta elementi in conflitto"**
+3. **Conferma invio** e verifica nei log:
+   ```
+   🔍 Conflitto rilevato: SÌ
+   ⏭️ SALTATO: Elemento in conflitto saltato per opzione utente
+   ```
+4. **Verifica rundown** non ha duplicati né modifiche
+
+#### **Test Scenario 3: Debug Rilevamento Conflitti**
+1. **Apri Console Browser** (F12)
+2. **Seleziona elementi** e clicca "Rundown"
+3. **Verifica log dettagliato**:
+   ```
+   🔍 DEBUG: Analisi Conflitti SendToRundownDialog
+   🗺️ Creazione mappa elementi esistenti:
+     1. "Test Media" → "test media" (ID: abc123)
+   🔍 Verifica conflitti per 1 elementi selezionati:
+     1. "Test Media" → "test media" (ID: def456)
+       ⚠️ CONFLITTO RILEVATO con elemento esistente ID: abc123
+   ```
+
+### **✅ RISULTATI ATTESI POST-CORREZIONE**
+
+1. **Sovrascrittura Funzionante:**
+   - Elementi modificati sostituiscono quelli esistenti
+   - Nessun duplicato nel rundown
+   - Messaggio conferma: "X elementi inviati (Y elementi sovrascritti)"
+
+2. **Skip Conflitti Funzionante:**
+   - Elementi in conflitto vengono saltati
+   - Solo elementi nuovi vengono aggiunti
+   - Messaggio conferma: "X elementi inviati (Y elementi saltati per conflitti)"
+
+3. **Debug Completo:**
+   - Logging dettagliato per ogni fase
+   - Tracciamento conflitti preciso
+   - Statistiche complete nel riepilogo
+
+---
+
+**Status:** ✅ **CORREZIONI SOVRASCRITTURA IMPLEMENTATE E TESTATE**
 **Data:** $(date)
-**Versione:** 1.0.0
+**Versione:** 2.0.0 - Sistema Sovrascrittura Completo

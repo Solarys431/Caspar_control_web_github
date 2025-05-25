@@ -834,11 +834,12 @@ const ScaletteEditor = () => {
 
   // Funzione per confermare l'invio al rundown
   const handleConfirmSendToRundown = async (confirmData) => {
-    const { items, options } = confirmData;
+    const { items, options, conflicts } = confirmData;
 
-    console.group('🚀 DEBUG: Invio al Rundown');
+    console.group('🚀 DEBUG: Invio al Rundown con Gestione Conflitti');
     console.log('📋 Elementi ricevuti:', items.length);
     console.log('⚙️ Opzioni:', options);
+    console.log('⚠️ Conflitti rilevati:', conflicts?.length || 0);
     console.log('📝 Lista elementi:', items.map(item => ({ id: item.id, type: item.type, name: item.data?.customName || item.name })));
 
     setSendToRundownLoading(true);
@@ -853,8 +854,19 @@ const ScaletteEditor = () => {
         console.warn(`⚠️ DUPLICAZIONE RILEVATA: ${items.length} elementi ricevuti, ${uniqueItems.length} unici`);
       }
 
-      // Contatore per tenere traccia degli elementi inviati con successo
+      // Crea una mappa dei conflitti per accesso rapido
+      const conflictMap = new Map();
+      if (conflicts && conflicts.length > 0) {
+        conflicts.forEach(conflict => {
+          conflictMap.set(conflict.item.id, conflict.existingItem);
+        });
+        console.log('🗺️ Mappa conflitti creata:', conflictMap.size, 'elementi');
+      }
+
+      // Contatori per statistiche
       let successCount = 0;
+      let skippedCount = 0;
+      let overwrittenCount = 0;
 
       // Converti gli elementi al canale 1 se richiesto
       const itemsToProcess = options.convertChannels
@@ -862,6 +874,7 @@ const ScaletteEditor = () => {
         : uniqueItems;
 
       console.log(`🔄 Elementi da processare: ${itemsToProcess.length}`);
+      console.log(`📋 Gestione conflitti: overwriteAll=${options.overwriteAll}, skipConflicts=${options.skipConflicts}`);
 
       // Invia ogni elemento al rundown
       itemsToProcess.forEach((item, index) => {
@@ -870,6 +883,24 @@ const ScaletteEditor = () => {
           type: item.type,
           name: item.data?.customName || item.name
         });
+
+        // Verifica se l'elemento è in conflitto
+        const existingItem = conflictMap.get(item.id);
+        const hasConflict = !!existingItem;
+
+        console.log(`🔍 Conflitto rilevato: ${hasConflict ? 'SÌ' : 'NO'}`);
+
+        // Gestione conflitti
+        if (hasConflict) {
+          if (options.skipConflicts && !options.overwriteAll) {
+            console.log(`⏭️ SALTATO: Elemento in conflitto saltato per opzione utente`);
+            skippedCount++;
+            return; // Salta questo elemento
+          } else if (options.overwriteAll) {
+            console.log(`🔄 SOVRASCRITTURA: Elemento esistente verrà sovrascritto`);
+            // Procedi con la sovrascrittura (gestita sotto)
+          }
+        }
         if (item.type === 'MEDIA') {
           // Estrai i dati dal campo data JSONB
           const { customName, originalName, timing, casparcgConfig, mediaDetails } = item.data;
@@ -890,8 +921,21 @@ const ScaletteEditor = () => {
             autoNext: mediaDetails.autoNext || false
           };
 
-          console.log("Invio media al rundown:", mediaData);
-          rundownContext.addMedia(mediaData);
+          // Gestione sovrascrittura per elementi MEDIA
+          if (hasConflict && options.overwriteAll) {
+            console.log("🔄 SOVRASCRITTURA MEDIA: Aggiornamento elemento esistente");
+            // Aggiorna l'elemento esistente invece di aggiungerne uno nuovo
+            const updatedMediaData = {
+              ...mediaData,
+              id: existingItem.id // Mantieni l'ID dell'elemento esistente
+            };
+            rundownContext.updateItem(existingItem.id, updatedMediaData);
+            overwrittenCount++;
+            console.log("✅ Media sovrascritto con successo:", updatedMediaData);
+          } else {
+            console.log("➕ AGGIUNTA MEDIA: Nuovo elemento");
+            rundownContext.addMedia(mediaData);
+          }
           successCount++;
         } else if (item.type === 'TEMPLATE') {
           // Estrai i dati dal campo data JSONB
@@ -913,8 +957,21 @@ const ScaletteEditor = () => {
             autoRemove: templateDetails.autoRemove || false
           };
 
-          console.log("Invio template al rundown:", templateData);
-          rundownContext.addTemplate(templateData);
+          // Gestione sovrascrittura per elementi TEMPLATE
+          if (hasConflict && options.overwriteAll) {
+            console.log("🔄 SOVRASCRITTURA TEMPLATE: Aggiornamento elemento esistente");
+            // Aggiorna l'elemento esistente invece di aggiungerne uno nuovo
+            const updatedTemplateData = {
+              ...templateData,
+              id: existingItem.id // Mantieni l'ID dell'elemento esistente
+            };
+            rundownContext.updateTemplate(existingItem.id, updatedTemplateData);
+            overwrittenCount++;
+            console.log("✅ Template sovrascritto con successo:", updatedTemplateData);
+          } else {
+            console.log("➕ AGGIUNTA TEMPLATE: Nuovo elemento");
+            rundownContext.addTemplate(templateData);
+          }
           successCount++;
         } else if (item.type === 'STORY') {
           console.log('📖 Processando elemento STORY:', item.data?.customName || item.name);
@@ -949,8 +1006,21 @@ const ScaletteEditor = () => {
                 data: { ...item.data }
               };
 
-              console.log('✅ Invio STORY completa al rundown:', storyData);
-              rundownContext.addStory(storyData);
+              // Gestione sovrascrittura per elementi STORY
+              if (hasConflict && options.overwriteAll) {
+                console.log("🔄 SOVRASCRITTURA STORY: Aggiornamento elemento esistente");
+                // Aggiorna l'elemento esistente invece di aggiungerne uno nuovo
+                const updatedStoryData = {
+                  ...storyData,
+                  id: existingItem.id // Mantieni l'ID dell'elemento esistente
+                };
+                rundownContext.updateItem(existingItem.id, updatedStoryData);
+                overwrittenCount++;
+                console.log("✅ STORY sovrascritta con successo:", updatedStoryData);
+              } else {
+                console.log("➕ AGGIUNTA STORY: Nuovo elemento");
+                rundownContext.addStory(storyData);
+              }
               successCount++;
             } else {
               // FALLBACK: Se il rundown non supporta STORY, invia i componenti separatamente
@@ -1032,18 +1102,30 @@ const ScaletteEditor = () => {
         }
       });
 
-      console.log(`\n📊 RIEPILOGO INVIO:`);
+      console.log(`\n📊 RIEPILOGO INVIO CON GESTIONE CONFLITTI:`);
       console.log(`   - Elementi ricevuti: ${items.length}`);
       console.log(`   - Elementi unici: ${uniqueItems.length}`);
       console.log(`   - Elementi processati: ${itemsToProcess.length}`);
       console.log(`   - Elementi inviati con successo: ${successCount}`);
+      console.log(`   - Elementi saltati (conflitti): ${skippedCount}`);
+      console.log(`   - Elementi sovrascritti: ${overwrittenCount}`);
+      console.log(`   - Conflitti gestiti: ${skippedCount + overwrittenCount}`);
       console.groupEnd();
 
       // Mostra un messaggio di successo
       if (successCount > 0) {
-        const message = multiSelection.hasSelection
+        let message = multiSelection.hasSelection
           ? `${successCount} elementi selezionati inviati al rundown con successo!`
           : `${successCount} elementi inviati al rundown con successo!`;
+
+        // Aggiungi informazioni sui conflitti gestiti
+        if (overwrittenCount > 0) {
+          message += ` (${overwrittenCount} elementi sovrascritti)`;
+        }
+        if (skippedCount > 0) {
+          message += ` (${skippedCount} elementi saltati per conflitti)`;
+        }
+
         alert(message);
 
         // Pulisci la selezione dopo l'invio se c'era una selezione

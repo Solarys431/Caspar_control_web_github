@@ -58,8 +58,8 @@ const ItemSummaryCard = ({ item, index, hasConflict = false, existingItem = null
     >
       <ListItemIcon>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Typography variant="caption" sx={{ 
-            minWidth: 24, 
+          <Typography variant="caption" sx={{
+            minWidth: 24,
             textAlign: 'center',
             fontWeight: 'bold',
             color: 'text.secondary'
@@ -69,7 +69,7 @@ const ItemSummaryCard = ({ item, index, hasConflict = false, existingItem = null
           <ItemTypeIcon type={item.type} size="small" />
         </Box>
       </ListItemIcon>
-      
+
       <ListItemText
         primary={
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -91,9 +91,9 @@ const ItemSummaryCard = ({ item, index, hasConflict = false, existingItem = null
               {item.type === 'STORY' && 'Storia con contenuto'}
             </Typography>
             {item.data?.timing?.duration && (
-              <Chip 
-                label={item.data.timing.duration} 
-                size="small" 
+              <Chip
+                label={item.data.timing.duration}
+                size="small"
                 variant="outlined"
                 sx={{ fontSize: '0.6rem', height: 16 }}
               />
@@ -101,7 +101,7 @@ const ItemSummaryCard = ({ item, index, hasConflict = false, existingItem = null
           </Box>
         }
       />
-      
+
       {hasConflict && existingItem && (
         <Box sx={{ ml: 2 }}>
           <Typography variant="caption" color="warning.main" sx={{ fontWeight: 'bold' }}>
@@ -115,7 +115,7 @@ const ItemSummaryCard = ({ item, index, hasConflict = false, existingItem = null
 
 /**
  * Dialogo principale per l'invio al rundown
- * 
+ *
  * @param {Object} props - Proprietà del componente
  * @param {boolean} props.open - Se il dialogo è aperto
  * @param {Function} props.onClose - Callback per chiudere il dialogo
@@ -145,29 +145,58 @@ const SendToRundownDialog = ({
     options: false
   });
 
-  // Analisi conflitti
+  // Analisi conflitti con debug dettagliato
   const conflictAnalysis = useMemo(() => {
+    console.group('🔍 DEBUG: Analisi Conflitti SendToRundownDialog');
+    console.log('📋 Elementi selezionati:', selectedItems.length);
+    console.log('📋 Elementi esistenti nel rundown:', existingRundownItems.length);
+
     const conflicts = [];
     const conflictMap = new Map();
 
     // Crea una mappa degli elementi esistenti per nome/file
-    existingRundownItems.forEach(existing => {
+    console.log('\n🗺️ Creazione mappa elementi esistenti:');
+    existingRundownItems.forEach((existing, index) => {
       const key = existing.data?.customName || existing.name || existing.data?.clip || existing.data?.template;
       if (key) {
-        conflictMap.set(key.toLowerCase(), existing);
+        const normalizedKey = key.toLowerCase();
+        conflictMap.set(normalizedKey, existing);
+        console.log(`  ${index + 1}. "${key}" → "${normalizedKey}" (ID: ${existing.id})`);
+      } else {
+        console.log(`  ${index + 1}. ELEMENTO SENZA CHIAVE VALIDA:`, existing);
       }
     });
 
+    console.log(`\n🔍 Verifica conflitti per ${selectedItems.length} elementi selezionati:`);
     // Verifica conflitti per ogni elemento selezionato
-    selectedItems.forEach(item => {
+    selectedItems.forEach((item, index) => {
       const key = item.data?.customName || item.name || item.data?.clip || item.data?.template;
-      if (key && conflictMap.has(key.toLowerCase())) {
-        conflicts.push({
-          item,
-          existingItem: conflictMap.get(key.toLowerCase())
-        });
+      if (key) {
+        const normalizedKey = key.toLowerCase();
+        console.log(`  ${index + 1}. "${key}" → "${normalizedKey}" (ID: ${item.id})`);
+
+        if (conflictMap.has(normalizedKey)) {
+          const existingItem = conflictMap.get(normalizedKey);
+          conflicts.push({
+            item,
+            existingItem
+          });
+          console.log(`    ⚠️ CONFLITTO RILEVATO con elemento esistente ID: ${existingItem.id}`);
+        } else {
+          console.log(`    ✅ Nessun conflitto`);
+        }
+      } else {
+        console.log(`  ${index + 1}. ELEMENTO SENZA CHIAVE VALIDA:`, item);
       }
     });
+
+    console.log(`\n📊 Risultato analisi conflitti:`);
+    console.log(`   - Conflitti trovati: ${conflicts.length}`);
+    console.log(`   - Elementi in conflitto:`, conflicts.map(c => ({
+      nuovo: c.item.data?.customName || c.item.name,
+      esistente: c.existingItem.data?.customName || c.existingItem.name
+    })));
+    console.groupEnd();
 
     return {
       hasConflicts: conflicts.length > 0,
@@ -229,9 +258,9 @@ const SendToRundownDialog = ({
         sx: { minHeight: '60vh', maxHeight: '90vh' }
       }}
     >
-      <DialogTitle sx={{ 
-        display: 'flex', 
-        alignItems: 'center', 
+      <DialogTitle sx={{
+        display: 'flex',
+        alignItems: 'center',
         justifyContent: 'space-between',
         pb: 1
       }}>
@@ -241,7 +270,7 @@ const SendToRundownDialog = ({
             Invia al Rundown Live
           </Typography>
         </Box>
-        
+
         {!loading && (
           <IconButton onClick={handleClose} size="small">
             <CloseIcon />
@@ -256,7 +285,7 @@ const SendToRundownDialog = ({
             <Typography variant="body2" gutterBottom>
               {progress.message || 'Invio in corso...'}
             </Typography>
-            <LinearProgress 
+            <LinearProgress
               variant={progress.determinate ? 'determinate' : 'indeterminate'}
               value={progress.value || 0}
               sx={{ mb: 1 }}
@@ -268,13 +297,13 @@ const SendToRundownDialog = ({
         )}
 
         {/* Alert principale */}
-        <Alert 
-          severity={conflictAnalysis.hasConflicts ? 'warning' : 'info'} 
+        <Alert
+          severity={conflictAnalysis.hasConflicts ? 'warning' : 'info'}
           sx={{ mb: 2 }}
           icon={conflictAnalysis.hasConflicts ? <WarningIcon /> : <InfoIcon />}
         >
           <Typography variant="body2">
-            {conflictAnalysis.hasConflicts 
+            {conflictAnalysis.hasConflicts
               ? `Stai per inviare ${itemStats.total} elementi al rundown live. ${conflictAnalysis.conflictCount} elementi potrebbero sovrascrivere contenuti esistenti.`
               : `Stai per inviare ${itemStats.total} elementi al rundown live. Tutti gli elementi saranno convertiti automaticamente al canale 1 per la messa in onda.`
             }
@@ -282,7 +311,7 @@ const SendToRundownDialog = ({
         </Alert>
 
         {/* Riepilogo elementi */}
-        <Accordion 
+        <Accordion
           expanded={expandedSections.summary}
           onChange={() => toggleSection('summary')}
           sx={{ mb: 1 }}
@@ -325,7 +354,7 @@ const SendToRundownDialog = ({
 
         {/* Gestione conflitti */}
         {conflictAnalysis.hasConflicts && (
-          <Accordion 
+          <Accordion
             expanded={expandedSections.conflicts}
             onChange={() => toggleSection('conflicts')}
             sx={{ mb: 1 }}
@@ -355,7 +384,7 @@ const SendToRundownDialog = ({
         )}
 
         {/* Opzioni avanzate */}
-        <Accordion 
+        <Accordion
           expanded={expandedSections.options}
           onChange={() => toggleSection('options')}
         >
@@ -380,7 +409,7 @@ const SendToRundownDialog = ({
                   </Typography>
                 }
               />
-              
+
               {conflictAnalysis.hasConflicts && (
                 <>
                   <FormControlLabel
@@ -397,7 +426,7 @@ const SendToRundownDialog = ({
                       </Typography>
                     }
                   />
-                  
+
                   <FormControlLabel
                     control={
                       <Checkbox
@@ -420,14 +449,14 @@ const SendToRundownDialog = ({
       </DialogContent>
 
       <DialogActions sx={{ px: 3, py: 2 }}>
-        <Button 
-          onClick={handleClose} 
+        <Button
+          onClick={handleClose}
           disabled={loading}
           color="inherit"
         >
           Annulla
         </Button>
-        
+
         <Button
           onClick={handleConfirm}
           variant="contained"
@@ -435,8 +464,8 @@ const SendToRundownDialog = ({
           startIcon={loading ? null : <PlaylistPlayIcon />}
           color="primary"
         >
-          {loading 
-            ? 'Invio in corso...' 
+          {loading
+            ? 'Invio in corso...'
             : `Invia ${selectedItems.length} elemento${selectedItems.length !== 1 ? 'i' : ''}`
           }
         </Button>
