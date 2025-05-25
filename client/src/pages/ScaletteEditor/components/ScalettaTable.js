@@ -37,9 +37,19 @@ const ScalettaTableRow = React.memo(({
   onDragStart,
   onDragOver,
   onDragEnd,
-  onDrop
+  onDrop,
+  playbackSync // RICHIESTA 1: Hook per sincronizzazione stato riproduzione
 }) => {
   const itemStatus = useItemStatus(item, editingStatusByItemId);
+
+  // RICHIESTA 1: Determina lo stato di riproduzione dell'elemento
+  const isPlaying = playbackSync ? playbackSync.isItemPlaying(item.id) : false;
+  const isNext = playbackSync ? playbackSync.isItemNext(item.id) : false;
+  const isLive = playbackSync ? playbackSync.isItemLive(item.id) : false;
+  const playbackStatus = playbackSync ? playbackSync.getPlaybackStatus(item.id) : null;
+
+  // RICHIESTA 1: Determina se l'elemento può essere modificato (non in onda)
+  const canEditItem = canEdit && !isLive && !isPlaying;
 
   return (
     <TableRow
@@ -47,14 +57,23 @@ const ScalettaTableRow = React.memo(({
       hover
       sx={{
         ...tableStyles.tableRow,
-        cursor: canEdit ? 'move' : 'pointer',
-        backgroundColor: selectedItemIndex === index
-          ? 'rgba(76, 175, 80, 0.3)' // Verde per l'elemento selezionato
-          : selectedItemIndex !== -1 && index > selectedItemIndex
-            ? 'rgba(255, 152, 0, 0.15)' // Arancione chiaro per gli elementi successivi
-            : dragOverIndex === index
-              ? 'rgba(25, 118, 210, 0.12)' // Blu per il drag over
-              : 'inherit'
+        cursor: canEditItem ? 'move' : 'pointer',
+        // RICHIESTA 1: Colori basati sullo stato di riproduzione
+        backgroundColor: isLive || isPlaying
+          ? 'rgba(244, 67, 54, 0.2)' // Rosso per elementi ON AIR/PLAYING
+          : isNext
+            ? 'rgba(255, 193, 7, 0.2)' // Giallo per elemento NEXT
+            : selectedItemIndex === index
+              ? 'rgba(76, 175, 80, 0.3)' // Verde per l'elemento selezionato
+              : selectedItemIndex !== -1 && index > selectedItemIndex
+                ? 'rgba(255, 152, 0, 0.15)' // Arancione chiaro per gli elementi successivi
+                : dragOverIndex === index
+                  ? 'rgba(25, 118, 210, 0.12)' // Blu per il drag over
+                  : 'inherit',
+        // RICHIESTA 1: Bordo per elementi in onda
+        border: isLive || isPlaying ? '2px solid #f44336' : 'none',
+        // RICHIESTA 1: Opacità ridotta se non modificabile
+        opacity: (!canEditItem && (isLive || isPlaying)) ? 0.8 : 1
       }}
       className={dragOverIndex === index ? 'drag-over' : 'drag-item'}
       draggable={canEdit}
@@ -105,27 +124,76 @@ const ScalettaTableRow = React.memo(({
               showLabel={false}
             />
 
+            {/* RICHIESTA 1: Indicatori di stato riproduzione */}
+            {(isLive || isPlaying) && (
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  backgroundColor: '#f44336',
+                  color: 'white',
+                  borderRadius: '4px',
+                  padding: '2px 6px',
+                  fontSize: '0.7rem',
+                  fontWeight: 'bold',
+                  animation: 'pulse 1.5s infinite',
+                  '@keyframes pulse': {
+                    '0%': { opacity: 1 },
+                    '50%': { opacity: 0.7 },
+                    '100%': { opacity: 1 }
+                  }
+                }}
+              >
+                ON AIR
+              </Box>
+            )}
+
+            {isNext && !isPlaying && !isLive && (
+              <Box
+                sx={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  backgroundColor: '#ff9800',
+                  color: 'white',
+                  borderRadius: '4px',
+                  padding: '2px 6px',
+                  fontSize: '0.7rem',
+                  fontWeight: 'bold'
+                }}
+              >
+                NEXT
+              </Box>
+            )}
+
             {/* Nome con tooltip per STORY */}
             {item.type === 'STORY' && item.data?.content ? (
               <StoryContentTooltip
                 content={item.data.content}
                 title={item.data?.customName || item.name}
                 item={item}
-                onClick={() => onEditItem(item)}
+                onClick={() => canEditItem ? onEditItem(item) : null}
               >
                 <Typography variant="body2" sx={{
                   fontWeight: 500,
-                  cursor: 'pointer',
-                  '&:hover': {
+                  cursor: canEditItem ? 'pointer' : 'default',
+                  color: (!canEditItem && (isLive || isPlaying)) ? 'text.disabled' : 'inherit',
+                  '&:hover': canEditItem ? {
                     color: 'warning.main',
                     textDecoration: 'underline'
-                  }
-                }}>
+                  } : {}
+                }}
+                title={(!canEditItem && (isLive || isPlaying)) ? 'Elemento in onda - modifica non consentita' : ''}
+                >
                   {item.data?.customName || 'Storia senza nome'}
                 </Typography>
               </StoryContentTooltip>
             ) : (
-              <Typography variant="body2" sx={{ fontWeight: 500 }}>
+              <Typography variant="body2" sx={{
+                fontWeight: 500,
+                color: (!canEditItem && (isLive || isPlaying)) ? 'text.disabled' : 'inherit'
+              }}
+              title={(!canEditItem && (isLive || isPlaying)) ? 'Elemento in onda - modifica non consentita' : ''}
+              >
                 {item.data?.customName || 'Senza nome'}
               </Typography>
             )}
@@ -341,7 +409,8 @@ const ScalettaTable = ({
   onStopStory,
   visibleColumns = ['index', 'startTime', 'duration', 'location', 'name', 'file', 'notes', 'actions'],
   selectedItemsSet = new Set(),
-  onItemSelectionChange
+  onItemSelectionChange,
+  playbackSync // RICHIESTA 1: Hook per sincronizzazione stato riproduzione
 }) => {
   // Verifica se l'utente può modificare la scaletta
   const canEdit = userRole === 'owner' || userRole === 'editor';
@@ -420,6 +489,7 @@ const ScalettaTable = ({
                 onDragOver={onDragOver}
                 onDragEnd={onDragEnd}
                 onDrop={onDrop}
+                playbackSync={playbackSync}
               />
             ))}
           </TableBody>

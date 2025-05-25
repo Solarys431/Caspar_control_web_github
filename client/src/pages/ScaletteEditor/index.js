@@ -31,6 +31,7 @@ import usePreviewPlayer from './hooks/usePreviewPlayer';
 import useDialogs from './hooks/useDialogs';
 import useOscData from './hooks/useOscData';
 import useMultiSelection from './hooks/useMultiSelection';
+import usePlaybackSync from '../../hooks/usePlaybackSync';
 
 // Componenti
 import PreviewSection from './components/PreviewSection';
@@ -135,6 +136,9 @@ const ScaletteEditor = () => {
       console.log('🔄 Selezione cambiata:', { selectedItems, selectedIds });
     }
   });
+
+  // RICHIESTA 1: Hook per sincronizzazione stato riproduzione
+  const playbackSync = usePlaybackSync();
 
   // Verifica se l'utente è un operatore di playout
   useEffect(() => {
@@ -1512,6 +1516,16 @@ const ScaletteEditor = () => {
       // Aggiorna la preview
       previewPlayer.setPreviewMedia(clip);
       previewPlayer.handlePlaybackControl('play');
+
+      // RICHIESTA 1: Sincronizza stato di riproduzione
+      playbackSync.updatePlaybackStatus(item.id, {
+        status: 'PLAYING',
+        channel: previewChannel,
+        layer: 1,
+        startTime: Date.now(),
+        source: 'scalette'
+      });
+
     } catch (e) {
       console.error(`Errore riproduzione media:`, e);
       dialogs.setErrorMessage(`Errore riproduzione media: ${e.message}`);
@@ -1535,7 +1549,7 @@ const ScaletteEditor = () => {
   };
 
   // Funzione per fermare un media dalla scaletta
-  const handleStopItem = () => {
+  const handleStopItem = (item = null) => {
     try {
       // Usa sempre il canale di preview (3)
       sendCommand(casparCommands.generateStopCommand(previewChannel, 1))
@@ -1544,6 +1558,18 @@ const ScaletteEditor = () => {
           dialogs.setErrorMessage(`Errore stop media: ${error.message}`);
         });
       previewPlayer.handlePlaybackControl('stop');
+
+      // RICHIESTA 1: Sincronizza stato di arresto se abbiamo un item
+      if (item && item.id) {
+        playbackSync.updatePlaybackStatus(item.id, {
+          status: 'STOPPED',
+          channel: previewChannel,
+          layer: 1,
+          startTime: null,
+          source: 'scalette'
+        });
+      }
+
     } catch (e) {
       console.error(`Errore stop media:`, e);
       dialogs.setErrorMessage(`Errore stop media: ${e.message}`);
@@ -2339,6 +2365,7 @@ const ScaletteEditor = () => {
                     visibleColumns={visibleColumns}
                     selectedItemsSet={multiSelection.selectedItemsSet}
                     onItemSelectionChange={multiSelection.toggleItemSelection}
+                    playbackSync={playbackSync}
                   />
                 </Paper>
               ) : (
