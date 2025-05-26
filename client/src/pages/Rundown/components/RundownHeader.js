@@ -11,8 +11,10 @@ import {
   Menu,
   MenuItem,
   ListItemIcon,
-  ListItemText
-  // Tooltip non utilizzato
+  ListItemText,
+  Chip,
+  Tooltip,
+  CircularProgress
 } from '@mui/material';
 import FolderOpenIcon from '@mui/icons-material/FolderOpen';
 import SaveIcon from '@mui/icons-material/Save';
@@ -26,6 +28,9 @@ import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import MovieIcon from '@mui/icons-material/Movie';
 import BrushIcon from '@mui/icons-material/Brush';
 import LinkIcon from '@mui/icons-material/Link';
+import CloudIcon from '@mui/icons-material/Cloud';
+import CloudOffIcon from '@mui/icons-material/CloudOff';
+import ErrorIcon from '@mui/icons-material/Error';
 import { useRundown } from '../../../contexts/RundownContext';
 
 import useRundownPlayback from '../hooks/useRundownPlayback';
@@ -40,7 +45,12 @@ const RundownHeader = ({
   items,
   connected,
   showNotification,
-  dialogsState
+  dialogsState,
+  // Props Supabase
+  useSupabaseSync,
+  supabaseLoading,
+  supabaseError,
+  activeRundownId
   // PROBLEMA 1: Rimosso playAll e stopAll dalle props - ora importati dal context
 }) => {
   const {
@@ -195,19 +205,67 @@ const RundownHeader = ({
     >
       <Grid container spacing={2} alignItems="center">
         <Grid item xs={12} md={6}>
-          <TextField
-            label="Nome Rundown"
-            variant="outlined"
-            fullWidth
-            value={rundownName}
-            onChange={(e) => setRundownName(e.target.value)}
-            size="small"
-          />
-          {modified && (
-            <Typography variant="caption" color="warning.main" sx={{ ml: 1 }}>
-              Modificato
-            </Typography>
-          )}
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <TextField
+              label="Nome Rundown"
+              variant="outlined"
+              fullWidth
+              value={rundownName}
+              onChange={(e) => setRundownName(e.target.value)}
+              size="small"
+            />
+
+            {/* Indicatori di stato */}
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 'fit-content' }}>
+              {/* Indicatore sincronizzazione Supabase */}
+              {useSupabaseSync ? (
+                <Tooltip title={`Sincronizzazione Supabase attiva${activeRundownId ? ` - ID: ${activeRundownId.slice(0, 8)}...` : ''}`}>
+                  <Chip
+                    icon={supabaseLoading ? <CircularProgress size={16} /> : <CloudIcon />}
+                    label="Sync"
+                    color={supabaseError ? "error" : "success"}
+                    size="small"
+                    variant="outlined"
+                  />
+                </Tooltip>
+              ) : (
+                <Tooltip title="Modalità offline - localStorage">
+                  <Chip
+                    icon={<CloudOffIcon />}
+                    label="Offline"
+                    color="default"
+                    size="small"
+                    variant="outlined"
+                  />
+                </Tooltip>
+              )}
+
+              {/* Indicatore modifiche */}
+              {modified && (
+                <Tooltip title="Rundown modificato">
+                  <Chip
+                    label="Modificato"
+                    color="warning"
+                    size="small"
+                    variant="outlined"
+                  />
+                </Tooltip>
+              )}
+
+              {/* Indicatore errori Supabase */}
+              {supabaseError && (
+                <Tooltip title={`Errore Supabase: ${supabaseError}`}>
+                  <Chip
+                    icon={<ErrorIcon />}
+                    label="Errore"
+                    color="error"
+                    size="small"
+                    variant="filled"
+                  />
+                </Tooltip>
+              )}
+            </Box>
+          </Box>
         </Grid>
 
         <Grid item xs={12} md={6}>

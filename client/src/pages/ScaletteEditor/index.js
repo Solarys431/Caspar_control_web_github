@@ -50,6 +50,7 @@ import ExtendedControls from './components/ExtendedControls';
 import ProfessionalTimeline from './components/ProfessionalTimeline';
 import WeekDaySelectDialog from './components/WeekDaySelectDialog';
 import SendToRundownDialog from './components/SendToRundownDialog';
+import RundownSelectorDialog from './components/RundownSelectorDialog';
 
 // Stili CSS
 import './ScaletteEditor.css';
@@ -81,6 +82,8 @@ const ScaletteEditor = () => {
   const [weekDaySelectDialogOpen, setWeekDaySelectDialogOpen] = useState(false);
   const [sendToRundownDialogOpen, setSendToRundownDialogOpen] = useState(false);
   const [sendToRundownLoading, setSendToRundownLoading] = useState(false);
+  const [rundownSelectorDialogOpen, setRundownSelectorDialogOpen] = useState(false);
+  const [selectedTargetRundown, setSelectedTargetRundown] = useState(null);
 
   // Stato per il pannello di modifica
   const [isEditPanelOpen, setIsEditPanelOpen] = useState(false);
@@ -805,23 +808,73 @@ const ScaletteEditor = () => {
   };
 
   // Funzione per aprire il dialogo di invio al rundown
-  const handleSendToRundown = () => {
+  const handleSendToRundown = async () => {
     console.group('🎯 DEBUG: Apertura Dialogo Invio Rundown');
 
-    // Verifica i permessi dell'utente
+    // Verifica i permessi dell'utente per la scaletta
     const canSend = canUserSendToRundown(scalettaItems.userRoleForScaletta, isPlayoutOperator);
 
     if (!canSend) {
-      console.log('❌ Permessi insufficienti');
+      console.log('❌ Permessi insufficienti per la scaletta');
       console.groupEnd();
       dialogs.setErrorMessage("Non hai i permessi per inviare la scaletta al rundown. Devi essere il proprietario, un operatore di playout designato, o avere il ruolo 'playout_operator'.");
       return;
+    }
+
+    // CORREZIONE CRITICA: Verifica permessi sul rundown di destinazione
+    if (rundownContext?.useSupabaseSync && rundownContext?.activeRundownId) {
+      try {
+        console.log('🔍 Verifica permessi rundown di destinazione:', rundownContext.activeRundownId);
+
+        // CORREZIONE: Percorso corretto per l'import del permissionsChecker
+        const { getUserRoleForRundown, canUserEditRundown } = await import('../../utils/permissionsChecker');
+
+        // CORREZIONE: Import del debugger permessi per analisi dettagliata
+        const { getPermissionsDebugMessage } = await import('../../utils/rundownPermissionsDebugger');
+
+        // Verifica il ruolo dell'utente sul rundown di destinazione
+        const userRoleForRundown = await getUserRoleForRundown(currentUserId, rundownContext.activeRundownId);
+        console.log('👤 Ruolo utente sul rundown:', userRoleForRundown);
+
+        if (!canUserEditRundown(userRoleForRundown)) {
+          console.log('❌ Permessi insufficienti sul rundown di destinazione');
+
+          // CORREZIONE: Analisi dettagliata dei permessi per debugging
+          try {
+            const debugMessage = await getPermissionsDebugMessage(rundownContext.activeRundownId);
+            console.log('🔍 Debug permessi dettagliato:\n', debugMessage);
+          } catch (debugError) {
+            console.error('Errore debug permessi:', debugError);
+          }
+
+          console.groupEnd();
+          dialogs.setErrorMessage("Non hai i permessi per modificare il rundown di destinazione. Devi essere proprietario, editor o playout_operator del rundown.");
+          return;
+        }
+
+        console.log('✅ Permessi verificati sul rundown di destinazione');
+      } catch (error) {
+        console.error('❌ Errore nella verifica dei permessi del rundown:', error);
+        console.groupEnd();
+        dialogs.setErrorMessage(`Errore nella verifica dei permessi: ${error.message}`);
+        return;
+      }
     }
 
     if (!rundownContext || typeof rundownContext.addMedia !== 'function' || typeof rundownContext.addTemplate !== 'function') {
       console.error("❌ Le funzioni addMedia o addTemplate non sono disponibili da useRundown.");
       console.groupEnd();
       dialogs.setErrorMessage("Errore: le funzioni per inviare al rundown non sono disponibili.");
+      return;
+    }
+
+    // CORREZIONE CRITICA: Verifica che ci sia un rundown attivo o apri il selettore
+    if (rundownContext?.useSupabaseSync && !rundownContext?.activeRundownId) {
+      console.log('❌ Nessun rundown attivo, apertura selettore rundown');
+      console.groupEnd();
+
+      // Apri il dialogo di selezione rundown invece di mostrare errore
+      setRundownSelectorDialogOpen(true);
       return;
     }
 
@@ -857,19 +910,134 @@ const ScaletteEditor = () => {
     setSendToRundownDialogOpen(true);
   };
 
+  /**
+   * Gestisce la selezione di un rundown di destinazione
+   */
+  const handleRundownSelection = async (selectedRundown) => {
+    try {
+      console.log('🎯 [SCALETTE EDITOR] Rundown selezionato:', selectedRundown);
+
+      // Salva il rundown selezionato
+      setSelectedTargetRundown(selectedRundown);
+
+      // Chiudi il dialogo di selezione
+      setRundownSelectorDialogOpen(false);
+
+      // CORREZIONE CRITICA: Imposta il rundown attivo e verifica che sia stato caricato
+      if (rundownContext?.useSupabaseSync && rundownContext?.setActiveRundownId) {
+        console.log('🔄 [SCALETTE EDITOR] Impostazione rundown attivo:', selectedRundown.id);
+
+        try {
+          await rundownContext.setActiveRundownId(selectedRundown.id);
+
+          // Verifica che il rundown sia stato effettivamente caricato
+          const maxRetries = 5;
+          let retries = 0;
+
+          while (retries < maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, 200)); // Attendi 200ms
+
+            if (rundownContext.activeRundownId === selectedRundown.id) {
+              console.log('✅ [SCALETTE EDITOR] Rundown attivo verificato:', selectedRundown.id);
+              break;
+            }
+
+            retries++;
+            console.log(`🔄 [SCALETTE EDITOR] Tentativo ${retries}/${maxRetries} - Verifica rundown attivo...`);
+          }
+
+          if (retries >= maxRetries) {
+            throw new Error('Timeout: Rundown attivo non impostato correttamente');
+          }
+
+        } catch (setActiveError) {
+          console.error('❌ [SCALETTE EDITOR] Errore impostazione rundown attivo:', setActiveError);
+          dialogs.setErrorMessage(`Errore nell'impostazione del rundown attivo: ${setActiveError.message}`);
+          return;
+        }
+      }
+
+      // Procedi con l'apertura del dialogo di invio solo dopo verifica successo
+      setTimeout(() => {
+        handleSendToRundown();
+      }, 100);
+
+    } catch (error) {
+      console.error('❌ [SCALETTE EDITOR] Errore nella selezione del rundown:', error);
+      dialogs.setErrorMessage(`Errore nella selezione del rundown: ${error.message}`);
+    }
+  };
+
   // Funzione per confermare l'invio al rundown
   const handleConfirmSendToRundown = async (confirmData) => {
     const { items, options, conflicts } = confirmData;
 
-    console.group('🚀 DEBUG: Invio al Rundown con Gestione Conflitti');
-    console.log('📋 Elementi ricevuti:', items.length);
-    console.log('⚙️ Opzioni:', options);
-    console.log('⚠️ Conflitti rilevati:', conflicts?.length || 0);
-    console.log('📝 Lista elementi:', items.map(item => ({ id: item.id, type: item.type, name: item.data?.customName || item.name })));
+    // CORREZIONE: Import dinamico del monitor di sincronizzazione
+    const {
+      monitorRundownState,
+      validateRundownState,
+      createRundownLogger
+    } = await import('../../utils/rundownSyncMonitor');
+
+    const logger = createRundownLogger('SEND_TO_RUNDOWN');
+
+    logger.group('Invio al Rundown con Gestione Conflitti');
+    logger.info('Elementi ricevuti:', items.length);
+    logger.info('Opzioni:', options);
+    logger.info('Conflitti rilevati:', conflicts?.length || 0);
+    logger.debug('Lista elementi:', items.map(item => ({ id: item.id, type: item.type, name: item.data?.customName || item.name })));
+
+    // CORREZIONE CRITICA: Monitoraggio stato rundown all'inizio del processo
+    monitorRundownState(rundownContext, 'Inizio Invio');
+    const initialValidation = validateRundownState(rundownContext, 'Pre-Invio');
+
+    if (!initialValidation.valid) {
+      logger.error('Stato rundown non valido per l\'invio:', initialValidation.issues);
+      logger.groupEnd();
+      dialogs.setErrorMessage(`Impossibile procedere con l'invio: ${initialValidation.issues.join(', ')}`);
+      return;
+    }
 
     setSendToRundownLoading(true);
 
     try {
+      // CORREZIONE CRITICA: Verifica e ripristina rundown attivo se necessario
+      if (!rundownContext?.activeRundownId && selectedTargetRundown?.id) {
+        console.warn('⚠️ [SYNC DEBUG] Rundown attivo perso, tentativo di ripristino...');
+
+        try {
+          if (rundownContext?.setActiveRundownId) {
+            await rundownContext.setActiveRundownId(selectedTargetRundown.id);
+            console.log('✅ [SYNC DEBUG] Rundown attivo ripristinato:', selectedTargetRundown.id);
+
+            // Attendi un momento per assicurarsi che lo stato sia aggiornato
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            // Verifica che il ripristino sia avvenuto
+            if (!rundownContext.activeRundownId) {
+              throw new Error('Impossibile ripristinare rundown attivo');
+            }
+          } else {
+            throw new Error('Funzione setActiveRundownId non disponibile');
+          }
+        } catch (restoreError) {
+          console.error('❌ [SYNC DEBUG] Errore ripristino rundown attivo:', restoreError);
+          console.groupEnd();
+          dialogs.setErrorMessage(`Errore: rundown di destinazione non disponibile. ${restoreError.message}`);
+          return;
+        }
+      }
+
+      // Verifica finale che il rundown sia attivo
+      if (!rundownContext?.activeRundownId) {
+        console.error('❌ [SYNC DEBUG] Nessun rundown attivo dopo verifica/ripristino');
+        console.groupEnd();
+        dialogs.setErrorMessage('Errore: nessun rundown di destinazione attivo. Riprova la selezione del rundown.');
+        return;
+      }
+
+      console.log('✅ [SYNC DEBUG] Rundown attivo confermato:', rundownContext.activeRundownId);
+
       // Verifica unicità degli elementi per evitare duplicazioni
       const uniqueItems = items.filter((item, index, self) =>
         index === self.findIndex(i => i.id === item.id)
@@ -901,31 +1069,53 @@ const ScaletteEditor = () => {
       console.log(`🔄 Elementi da processare: ${itemsToProcess.length}`);
       console.log(`📋 Gestione conflitti: overwriteAll=${options.overwriteAll}, skipConflicts=${options.skipConflicts}`);
 
-      // Invia ogni elemento al rundown
-      itemsToProcess.forEach((item, index) => {
-        console.log(`\n📦 Processando elemento ${index + 1}/${itemsToProcess.length}:`, {
-          id: item.id,
-          type: item.type,
-          name: item.data?.customName || item.name
-        });
+      // Invia ogni elemento al rundown con gestione errori
+      for (let index = 0; index < itemsToProcess.length; index++) {
+        const item = itemsToProcess[index];
 
-        // Verifica se l'elemento è in conflitto
-        const existingItem = conflictMap.get(item.id);
-        const hasConflict = !!existingItem;
+        try {
+          console.log(`\n📦 Processando elemento ${index + 1}/${itemsToProcess.length}:`, {
+            id: item.id,
+            type: item.type,
+            name: item.data?.customName || item.name
+          });
 
-        console.log(`🔍 Conflitto rilevato: ${hasConflict ? 'SÌ' : 'NO'}`);
+          // CORREZIONE: Verifica periodica che il rundown sia ancora attivo
+          if (!rundownContext?.activeRundownId) {
+            console.error(`❌ [SYNC DEBUG] Rundown attivo perso durante processamento elemento ${index + 1}`);
 
-        // Gestione conflitti
-        if (hasConflict) {
-          if (options.skipConflicts && !options.overwriteAll) {
-            console.log(`⏭️ SALTATO: Elemento in conflitto saltato per opzione utente`);
-            skippedCount++;
-            return; // Salta questo elemento
-          } else if (options.overwriteAll) {
-            console.log(`🔄 SOVRASCRITTURA: Elemento esistente verrà sovrascritto`);
-            // Procedi con la sovrascrittura (gestita sotto)
+            // Tentativo di ripristino
+            if (selectedTargetRundown?.id && rundownContext?.setActiveRundownId) {
+              console.warn('⚠️ [SYNC DEBUG] Tentativo ripristino rundown durante processamento...');
+              await rundownContext.setActiveRundownId(selectedTargetRundown.id);
+              await new Promise(resolve => setTimeout(resolve, 200));
+
+              if (!rundownContext.activeRundownId) {
+                throw new Error(`Rundown attivo perso durante processamento elemento ${index + 1}. Operazione interrotta.`);
+              }
+              console.log('✅ [SYNC DEBUG] Rundown ripristinato durante processamento');
+            } else {
+              throw new Error(`Rundown attivo non disponibile per elemento ${index + 1}. Operazione interrotta.`);
+            }
           }
-        }
+
+          // Verifica se l'elemento è in conflitto
+          const existingItem = conflictMap.get(item.id);
+          const hasConflict = !!existingItem;
+
+          console.log(`🔍 Conflitto rilevato: ${hasConflict ? 'SÌ' : 'NO'}`);
+
+          // Gestione conflitti
+          if (hasConflict) {
+            if (options.skipConflicts && !options.overwriteAll) {
+              console.log(`⏭️ SALTATO: Elemento in conflitto saltato per opzione utente`);
+              skippedCount++;
+              continue; // Salta questo elemento
+            } else if (options.overwriteAll) {
+              console.log(`🔄 SOVRASCRITTURA: Elemento esistente verrà sovrascritto`);
+              // Procedi con la sovrascrittura (gestita sotto)
+            }
+          }
         if (item.type === 'MEDIA') {
           // Estrai i dati dal campo data JSONB
           const { customName, originalName, timing, casparcgConfig, mediaDetails } = item.data;
@@ -959,7 +1149,12 @@ const ScaletteEditor = () => {
             console.log("✅ Media sovrascritto con successo:", updatedMediaData);
           } else {
             console.log("➕ AGGIUNTA MEDIA: Nuovo elemento");
-            rundownContext.addMedia(mediaData);
+            const addResult = await rundownContext.addMedia(mediaData);
+
+            // CORREZIONE: Verifica che l'elemento sia stato aggiunto con successo
+            if (!addResult) {
+              throw new Error('Elemento media non aggiunto correttamente al rundown');
+            }
           }
           successCount++;
         } else if (item.type === 'TEMPLATE') {
@@ -995,7 +1190,12 @@ const ScaletteEditor = () => {
             console.log("✅ Template sovrascritto con successo:", updatedTemplateData);
           } else {
             console.log("➕ AGGIUNTA TEMPLATE: Nuovo elemento");
-            rundownContext.addTemplate(templateData);
+            const addResult = await rundownContext.addTemplate(templateData);
+
+            // CORREZIONE: Verifica che l'elemento sia stato aggiunto con successo
+            if (!addResult) {
+              throw new Error('Elemento template non aggiunto correttamente al rundown');
+            }
           }
           successCount++;
         } else if (item.type === 'STORY') {
@@ -1044,7 +1244,12 @@ const ScaletteEditor = () => {
                 console.log("✅ STORY sovrascritta con successo:", updatedStoryData);
               } else {
                 console.log("➕ AGGIUNTA STORY: Nuovo elemento");
-                rundownContext.addStory(storyData);
+                const addResult = await rundownContext.addStory(storyData);
+
+                // CORREZIONE: Verifica che l'elemento sia stato aggiunto con successo
+                if (!addResult) {
+                  throw new Error('Elemento story non aggiunto correttamente al rundown');
+                }
               }
               successCount++;
             } else {
@@ -1125,7 +1330,11 @@ const ScaletteEditor = () => {
             console.log('⚠️ Storia senza media o template associati, saltata');
           }
         }
-      });
+        } catch (itemError) {
+          console.error(`❌ Errore nel processamento dell'elemento ${item.id}:`, itemError);
+          // Continua con il prossimo elemento
+        }
+      }
 
       console.log(`\n📊 RIEPILOGO INVIO CON GESTIONE CONFLITTI:`);
       console.log(`   - Elementi ricevuti: ${items.length}`);
@@ -1135,7 +1344,75 @@ const ScaletteEditor = () => {
       console.log(`   - Elementi saltati (conflitti): ${skippedCount}`);
       console.log(`   - Elementi sovrascritti: ${overwrittenCount}`);
       console.log(`   - Conflitti gestiti: ${skippedCount + overwrittenCount}`);
-      console.groupEnd();
+
+      // CORREZIONE: Verifica sincronizzazione Supabase con monitor avanzato
+      if (rundownContext?.useSupabaseSync && successCount > 0) {
+        logger.info('Verifica sincronizzazione Supabase...');
+
+        try {
+          // Import della funzione di verifica sincronizzazione
+          const { verifySyncAfterSend } = await import('../../utils/rundownSyncMonitor');
+
+          // Verifica sincronizzazione con retry automatico
+          const syncResult = await verifySyncAfterSend(rundownContext, successCount, 10000);
+
+          if (syncResult.success) {
+            logger.success(`Sincronizzazione verificata: ${syncResult.actualCount}/${syncResult.expectedCount} elementi in ${syncResult.duration}ms`);
+
+            if (syncResult.actualCount < syncResult.expectedCount) {
+              logger.warn(`Sincronizzazione parziale: ${syncResult.actualCount}/${syncResult.expectedCount} elementi`);
+            }
+          } else {
+            logger.error('Problema di sincronizzazione rilevato:', {
+              actualCount: syncResult.actualCount,
+              databaseCount: syncResult.databaseCount,
+              expectedCount: syncResult.expectedCount,
+              timeout: syncResult.timeout,
+              duration: syncResult.duration
+            });
+
+            // CORREZIONE: Tentativo di refresh forzato se c'è discrepanza
+            if (syncResult.databaseCount > syncResult.actualCount) {
+              logger.warn('Database ha più elementi dello stato locale - tentativo refresh forzato...');
+
+              try {
+                const { forceRefreshRundownState } = await import('../../utils/rundownSyncMonitor');
+                const refreshResult = await forceRefreshRundownState(rundownContext);
+
+                if (refreshResult.success) {
+                  logger.success(`Refresh forzato completato - trovati ${refreshResult.itemCount} elementi`);
+
+                  // Verifica nuovamente dopo il refresh
+                  await new Promise(resolve => setTimeout(resolve, 1000));
+                  const finalCount = rundownContext.items?.length || 0;
+
+                  if (finalCount >= successCount) {
+                    logger.success(`Sincronizzazione ripristinata dopo refresh: ${finalCount}/${successCount} elementi`);
+                  } else {
+                    logger.warn(`Refresh parzialmente riuscito: ${finalCount}/${successCount} elementi`);
+                  }
+                } else {
+                  logger.error('Refresh forzato fallito:', refreshResult.error);
+                }
+              } catch (refreshError) {
+                logger.error('Errore durante refresh forzato:', refreshError);
+              }
+            }
+
+            // Diagnostica finale dello stato del rundown
+            const { diagnoseRundownState } = await import('../../utils/rundownSyncMonitor');
+            diagnoseRundownState(rundownContext, {
+              operation: 'Post-Invio Verifica',
+              successCount,
+              syncResult
+            });
+          }
+        } catch (syncError) {
+          logger.error('Errore verifica sincronizzazione:', syncError);
+        }
+      }
+
+      logger.groupEnd();
 
       // Mostra un messaggio di successo
       if (successCount > 0) {
@@ -2502,6 +2779,14 @@ const ScaletteEditor = () => {
         selectedItems={multiSelection.hasSelection ? multiSelection.getSelectedItems() : scalettaItems.scalettaItems}
         existingRundownItems={rundownContext?.items || []}
         onConfirm={handleConfirmSendToRundown}
+        loading={sendToRundownLoading}
+      />
+
+      {/* Dialogo di selezione rundown di destinazione */}
+      <RundownSelectorDialog
+        open={rundownSelectorDialogOpen}
+        onClose={() => setRundownSelectorDialogOpen(false)}
+        onConfirm={handleRundownSelection}
         loading={sendToRundownLoading}
       />
 

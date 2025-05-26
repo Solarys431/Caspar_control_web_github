@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import { Box, Snackbar, Alert } from '@mui/material';
 import { useCaspar } from '../../contexts/CasparContext';
 import { useRundown } from '../../contexts/RundownContext'; // Hook principale per i dati del rundown
@@ -21,6 +22,9 @@ import useRundownDialogs from './hooks/useRundownDialogs';
  * Gestisce lo stato principale e le funzioni di alto livello.
  */
 const RundownPage = () => {
+  // CORREZIONE CRITICA: Ottieni l'ID del rundown dall'URL
+  const { id: urlRundownId } = useParams();
+
   // Hook per la connessione e i dati di CasparCG
   const {
     connected,
@@ -45,8 +49,22 @@ const RundownPage = () => {
     timeIndicatorPosition,
     calculateEndTime,
     removeItem, // Estrarre removeItem per passarlo come prop
-    updateItem  // Estrarre updateItem per passarlo come prop
+    updateItem,  // Estrarre updateItem per passarlo come prop
+    // Stati Supabase
+    useSupabaseSync,
+    supabaseLoading,
+    supabaseError,
+    activeRundownId,
+    setActiveRundownId
   } = useRundown();
+
+  // CORREZIONE CRITICA: Imposta il rundown attivo dall'URL quando la pagina viene caricata
+  useEffect(() => {
+    if (urlRundownId && urlRundownId !== activeRundownId) {
+      console.log('🔄 [RUNDOWN PAGE] Impostazione rundown attivo dall\'URL:', urlRundownId);
+      setActiveRundownId(urlRundownId);
+    }
+  }, [urlRundownId, activeRundownId, setActiveRundownId]);
 
   // Stato per le tab (Rundown / Calendario)
   const [tabValue, setTabValue] = useState(0);
@@ -107,6 +125,11 @@ const RundownPage = () => {
         dialogsState={dialogsState}
         playAll={playAll} // Passa la funzione playAll
         stopAll={stopAll} // Passa la funzione stopAll
+        // Stati Supabase
+        useSupabaseSync={useSupabaseSync}
+        supabaseLoading={supabaseLoading}
+        supabaseError={supabaseError}
+        activeRundownId={activeRundownId}
       />
 
       {/* Tabs per navigare tra la vista Rundown e la vista Calendario */}

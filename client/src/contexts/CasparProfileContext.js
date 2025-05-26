@@ -5,7 +5,7 @@
  * permettendo di selezionare un profilo attivo e di ottenere
  * informazioni sui server associati al profilo.
  */
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from './AuthContext';
 import supabase from '../supabaseClient';
 
@@ -27,11 +27,26 @@ export const CasparProfileProvider = ({ children }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Carica i profili all'avvio
+  // CORREZIONE: Ref per evitare query ripetute
+  const fetchingRef = useRef(false);
+  const lastFetchTimeRef = useRef(0);
+
+  // Carica i profili all'avvio con debouncing
   useEffect(() => {
-    if (currentUserId) {
-      fetchProfiles();
-      fetchUserPreference();
+    if (currentUserId && !fetchingRef.current) {
+      const now = Date.now();
+      const timeSinceLastFetch = now - lastFetchTimeRef.current;
+
+      // Debouncing: evita fetch ripetuti entro 1 secondo
+      if (timeSinceLastFetch > 1000) {
+        fetchingRef.current = true;
+        lastFetchTimeRef.current = now;
+
+        Promise.all([fetchProfiles(), fetchUserPreference()])
+          .finally(() => {
+            fetchingRef.current = false;
+          });
+      }
     }
   }, [currentUserId]);
 
@@ -84,19 +99,41 @@ export const CasparProfileProvider = ({ children }) => {
       if (data && data.default_casparcg_profile_id) {
         setActiveProfileId(data.default_casparcg_profile_id);
       } else {
-        // Se l'utente non ha una preferenza, cerca un profilo di default
+        // CORREZIONE CRITICA: Se l'utente non ha una preferenza, cerca un profilo di default
+        console.log('🔍 [CASPAR PROFILE] Ricerca profilo di default...');
+
         const { data: defaultProfileData, error: defaultProfileError } = await supabase
           .from('casparcg_profiles')
           .select('id')
           .eq('is_default_profile', true)
-          .single();
+          .maybeSingle(); // CORREZIONE: Usa maybeSingle() invece di single()
 
-        if (defaultProfileError && defaultProfileError.code !== 'PGRST116') {
-          throw defaultProfileError;
+        if (defaultProfileError) {
+          console.warn('⚠️ [CASPAR PROFILE] Errore ricerca profilo default:', defaultProfileError);
         }
 
         if (defaultProfileData) {
+          console.log('✅ [CASPAR PROFILE] Profilo default trovato:', defaultProfileData.id);
           setActiveProfileId(defaultProfileData.id);
+        } else {
+          // CORREZIONE: Se non c'è un profilo default, prendi il primo disponibile
+          console.log('🔍 [CASPAR PROFILE] Nessun profilo default, ricerca primo profilo disponibile...');
+
+          const { data: firstProfileData, error: firstProfileError } = await supabase
+            .from('casparcg_profiles')
+            .select('id')
+            .order('created_at', { ascending: true })
+            .limit(1)
+            .maybeSingle();
+
+          if (firstProfileError) {
+            console.warn('⚠️ [CASPAR PROFILE] Errore ricerca primo profilo:', firstProfileError);
+          } else if (firstProfileData) {
+            console.log('✅ [CASPAR PROFILE] Primo profilo trovato:', firstProfileData.id);
+            setActiveProfileId(firstProfileData.id);
+          } else {
+            console.warn('⚠️ [CASPAR PROFILE] Nessun profilo disponibile nel database');
+          }
         }
       }
     } catch (error) {

@@ -717,6 +717,8 @@ export const CasparProvider = ({ children }) => {
     mixer,
     addLog,
     clearLogs: () => setLogs([]),
+    // CORREZIONE: Esponi socket per ProfileSelector
+    socket,
     // Dati OSC
     oscConnected,
     oscData,

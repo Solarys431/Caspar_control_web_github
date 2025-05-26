@@ -520,14 +520,22 @@ const WeeklyCalendar = () => {
   // Funzione per scorporare gli elementi di una scaletta e inviarli al rundown
   const handleExplodeRundownToMain = useCallback(() => {
     if (selectedEvent && selectedEvent.rundown && selectedEvent.rundown.items && Array.isArray(selectedEvent.rundown.items)) {
-      // Prepara gli elementi da inviare al rundown
-      const itemsToLoad = selectedEvent.rundown.items.map(item => {
-        return {
-          id: item.id,
-          type: item.type,
-          name: item.name,
-          data: { ...item.data }
-        };
+      // CORREZIONE: Prepara gli elementi da inviare al rundown rimuovendo duplicati
+      const itemsToLoad = selectedEvent.rundown.items
+        .filter((item, index, self) => index === self.findIndex(i => i.id === item.id))
+        .map(item => {
+          return {
+            id: item.id,
+            type: item.type,
+            name: item.name,
+            data: { ...item.data }
+          };
+        });
+
+      console.log('🔍 [WEEKLY CALENDAR] Preparazione esplosione scaletta:', {
+        originalItems: selectedEvent.rundown.items.length,
+        uniqueItems: itemsToLoad.length,
+        duplicatesRemoved: selectedEvent.rundown.items.length - itemsToLoad.length
       });
 
       // Imposta gli elementi da esplodere e apre il dialogo di anteprima
@@ -724,7 +732,7 @@ const WeeklyCalendar = () => {
                       );
 
                       if (scaletteWithItems.length > 0) {
-                        // Prepara tutti gli elementi da tutte le scalette
+                        // CORREZIONE: Prepara tutti gli elementi da tutte le scalette rimuovendo duplicati
                         const allItems = [];
                         scaletteWithItems.forEach(scaletta => {
                           const itemsFromScaletta = scaletta.items.map(item => {
@@ -738,9 +746,21 @@ const WeeklyCalendar = () => {
                           allItems.push(...itemsFromScaletta);
                         });
 
+                        // Rimuovi duplicati basati sull'ID
+                        const uniqueItems = allItems.filter((item, index, self) =>
+                          index === self.findIndex(i => i.id === item.id)
+                        );
+
+                        console.log('🔍 [WEEKLY CALENDAR] Preparazione esplosione giornaliera:', {
+                          totalScalette: scaletteWithItems.length,
+                          originalItems: allItems.length,
+                          uniqueItems: uniqueItems.length,
+                          duplicatesRemoved: allItems.length - uniqueItems.length
+                        });
+
                         // Imposta gli elementi da esplodere e apre il dialogo di anteprima
-                        if (allItems.length > 0) {
-                          setItemsToExplode(allItems);
+                        if (uniqueItems.length > 0) {
+                          setItemsToExplode(uniqueItems);
                           setExplodeSource({
                             scalettaName: `Scalette del ${format(today, 'dd/MM/yyyy')}`,
                             day: currentDateIso

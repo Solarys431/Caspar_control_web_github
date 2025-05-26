@@ -1,6 +1,9 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useCaspar } from './CasparContext'; // Assicurati che il path sia corretto
+import { useAuth } from './AuthContext';
+import useRundownItems from '../pages/Rundown/hooks/useRundownItems';
+import { autoMigrateRundownFromLocalStorage, hasRundownToMigrate } from '../utils/rundownMigration';
 
 // Crea il context
 const RundownContext = createContext();
@@ -24,6 +27,86 @@ export const RundownProvider = ({ children }) => {
     templateList // PROBLEMA 3 FIX: Aggiungi templateList dal CasparContext
   } = useCaspar();
 
+  const { user } = useAuth();
+
+  // CORREZIONE: Stato per rundown attivo indipendente dall'URL
+  const [externalActiveRundownId, setExternalActiveRundownId] = useState(null);
+
+  // Hook per la sincronizzazione Supabase
+  // CORREZIONE CRITICA: Passa externalActiveRundownId al hook per sincronizzazione
+  const {
+    rundownItems: supabaseItems,
+    rundownName: supabaseName,
+    loading: supabaseLoading,
+    error: supabaseError,
+    modified: supabaseModified,
+    activeRundownId: urlActiveRundownId,
+    addMediaItem,
+    addTemplateItem,
+    addStoryItem,
+    setRundownName: updateRundownName,
+    loadRundownData
+  } = useRundownItems(externalActiveRundownId);
+
+  // CORREZIONE: Stabilizza activeRundownId con useMemo per evitare re-render
+  const activeRundownId = useMemo(() => {
+    return urlActiveRundownId || externalActiveRundownId;
+  }, [urlActiveRundownId, externalActiveRundownId]);
+
+  // CORREZIONE: Funzione per impostare rundown attivo esternamente (per editor scalette)
+  const setActiveRundownIdExternal = useCallback(async (rundownId) => {
+    console.log('🎯 [RUNDOWN_CONTEXT] Impostazione rundown attivo esterno:', rundownId);
+
+    if (rundownId) {
+      // Se c'è un ID, carica i dati del rundown
+      setExternalActiveRundownId(rundownId);
+
+      // Carica i dati del rundown se la funzione è disponibile
+      if (loadRundownData) {
+        try {
+          console.log('🔄 [RUNDOWN_CONTEXT] Caricamento dati rundown esterno...');
+          await loadRundownData(rundownId);
+
+          console.log('✅ [RUNDOWN_CONTEXT] Dati rundown caricati per ID esterno:', rundownId);
+
+          // Verifica che il caricamento sia avvenuto con successo
+          if (typeof addLog === 'function') {
+            addLog(`Rundown attivo impostato: ${rundownId}`, 'success');
+          }
+
+          return true; // Indica successo
+        } catch (error) {
+          console.error('❌ [RUNDOWN_CONTEXT] Errore caricamento dati rundown esterno:', error);
+
+          if (typeof addLog === 'function') {
+            addLog(`Errore caricamento rundown: ${error.message}`, 'error');
+          }
+
+          // Reset in caso di errore
+          setExternalActiveRundownId(null);
+          throw error; // Rilancia l'errore per gestione upstream
+        }
+      } else {
+        console.warn('⚠️ [RUNDOWN_CONTEXT] loadRundownData non disponibile');
+        if (typeof addLog === 'function') {
+          addLog('Funzione caricamento rundown non disponibile', 'warning');
+        }
+        return false;
+      }
+    } else {
+      // Se non c'è ID, resetta
+      setExternalActiveRundownId(null);
+      console.log('🔄 [RUNDOWN_CONTEXT] Rundown attivo esterno resettato');
+
+      if (typeof addLog === 'function') {
+        addLog('Rundown attivo resettato', 'info');
+      }
+
+      return true;
+    }
+  }, [loadRundownData, addLog]); // CORREZIONE: Rimuovi externalActiveRundownId dalle dipendenze per evitare loop
+
+  // Stati locali per compatibilità con API esistente
   const [items, setItems] = useState([]);
   const [currentItem, setCurrentItem] = useState(null);
   const [rundownName, setRundownName] = useState('Nuovo Rundown');
@@ -31,6 +114,8 @@ export const RundownProvider = ({ children }) => {
   const [autoPlay, setAutoPlay] = useState(false);
   const [currentPlayingIndex, setCurrentPlayingIndex] = useState(-1);
   const [autoPlayTimer, setAutoPlayTimer] = useState(null);
+  const [useSupabaseSync, setUseSupabaseSync] = useState(false);
+  const [migrationCompleted, setMigrationCompleted] = useState(false);
 
   const [currentTime, setCurrentTime] = useState(new Date());
   const [scheduledPlayback, setScheduledPlayback] = useState(false);
@@ -39,47 +124,137 @@ export const RundownProvider = ({ children }) => {
   const [playingItems, setPlayingItems] = useState([]);
   const [nextItemPrepared, setNextItemPrepared] = useState(null);
 
+  // Effetto per gestire la migrazione automatica da localStorage a Supabase
   useEffect(() => {
-    console.log('RundownContext: Attempting to load rundown from localStorage.');
-    try {
-      const savedRundown = localStorage.getItem('rundown');
-      if (savedRundown) {
-        const parsedRundown = JSON.parse(savedRundown);
-        setItems(parsedRundown.items || []);
-        setRundownName(parsedRundown.name || 'Rundown Caricato');
-        if (typeof addLog === 'function') {
-            addLog('Rundown caricato con successo dal localStorage.');
-        }
-        console.log('RundownContext: Rundown loaded from localStorage:', parsedRundown);
-      } else {
-        console.log('RundownContext: No rundown found in localStorage.');
-        if (typeof addLog === 'function') {
-            addLog('Nessun rundown salvato trovato nel localStorage.');
-        }
-      }
-    } catch (error) {
-      console.error('RundownContext: Errore nel caricamento del rundown dal localStorage:', error);
-      if (typeof addLog === 'function') {
-        addLog(`Errore caricamento rundown: ${error.message}`, 'error');
-      }
-    }
-  }, [addLog]);
+    const handleMigration = async () => {
+      if (!user?.id || migrationCompleted) return;
 
+      console.log('RundownContext: Verifica migrazione da localStorage a Supabase');
+
+      try {
+        // Verifica se c'è un rundown da migrare
+        if (hasRundownToMigrate()) {
+          if (typeof addLog === 'function') {
+            addLog('Trovato rundown in localStorage, avvio migrazione a Supabase...', 'info');
+          }
+
+          const migrationResult = await autoMigrateRundownFromLocalStorage(user.id);
+
+          if (migrationResult.success) {
+            if (typeof addLog === 'function') {
+              addLog(`Migrazione completata: ${migrationResult.message}`, 'success');
+            }
+            setUseSupabaseSync(true);
+            setMigrationCompleted(true);
+
+            // Se è stato creato un nuovo rundown, caricalo
+            if (migrationResult.rundownId) {
+              await loadRundownData(migrationResult.rundownId);
+            }
+          } else {
+            if (typeof addLog === 'function') {
+              addLog(`Errore migrazione: ${migrationResult.error}`, 'error');
+            }
+            // Fallback a localStorage
+            loadFromLocalStorage();
+          }
+        } else {
+          // Nessuna migrazione necessaria, usa Supabase se disponibile
+          setUseSupabaseSync(true);
+          setMigrationCompleted(true);
+        }
+      } catch (error) {
+        console.error('RundownContext: Errore durante migrazione:', error);
+        if (typeof addLog === 'function') {
+          addLog(`Errore migrazione: ${error.message}`, 'error');
+        }
+        // Fallback a localStorage
+        loadFromLocalStorage();
+      }
+    };
+
+    const loadFromLocalStorage = () => {
+      console.log('RundownContext: Caricamento da localStorage (fallback)');
+      try {
+        const savedRundown = localStorage.getItem('rundown');
+        if (savedRundown) {
+          const parsedRundown = JSON.parse(savedRundown);
+          setItems(parsedRundown.items || []);
+          setRundownName(parsedRundown.name || 'Rundown Caricato');
+          if (typeof addLog === 'function') {
+            addLog('Rundown caricato da localStorage (modalità offline)');
+          }
+        } else {
+          if (typeof addLog === 'function') {
+            addLog('Nessun rundown trovato in localStorage');
+          }
+        }
+      } catch (error) {
+        console.error('RundownContext: Errore caricamento localStorage:', error);
+        if (typeof addLog === 'function') {
+          addLog(`Errore caricamento localStorage: ${error.message}`, 'error');
+        }
+      }
+    };
+
+    if (user?.id) {
+      handleMigration();
+    } else {
+      // Se non c'è utente autenticato, usa localStorage
+      loadFromLocalStorage();
+    }
+  }, [user?.id, migrationCompleted, loadRundownData]); // RIMOSSA dipendenza addLog
+
+  // CORREZIONE CRITICA: Effetto per sincronizzare i dati da Supabase allo stato locale senza loop infinito
   useEffect(() => {
-    if (items.length > 0 || rundownName !== 'Nuovo Rundown' || localStorage.getItem('rundown') !== null) {
-      // console.log('RundownContext: Attempting to save rundown to localStorage.'); // Log troppo frequente
+    if (useSupabaseSync && supabaseItems && supabaseItems.length >= 0) {
+      console.log('🔄 [RUNDOWN CONTEXT] Sincronizzazione dati da Supabase:', supabaseItems.length, 'elementi');
+
+      // Converte i dati Supabase al formato locale
+      const convertedItems = supabaseItems.map(item => ({
+        id: item.id,
+        type: item.type,
+        name: item.name,
+        data: item.data,
+        isPlaying: false, // Stato locale di riproduzione
+        playingStartTime: null
+      }));
+
+      setItems(convertedItems);
+      setModified(supabaseModified || false);
+
+      // CORREZIONE: Log senza dipendenza per evitare loop infinito
+      console.log(`✅ [RUNDOWN CONTEXT] Sincronizzati ${convertedItems.length} elementi da Supabase`);
+    }
+  }, [useSupabaseSync, supabaseItems, supabaseModified]); // RIMOSSA dipendenza addLog
+
+  // Effetto per sincronizzare il nome del rundown da Supabase
+  useEffect(() => {
+    if (useSupabaseSync && supabaseName) {
+      setRundownName(supabaseName);
+    }
+  }, [useSupabaseSync, supabaseName]);
+
+  // CORREZIONE: Effetto per gestire errori Supabase senza loop infinito
+  useEffect(() => {
+    if (supabaseError) {
+      console.error('❌ [RUNDOWN CONTEXT] Errore Supabase:', supabaseError);
+    }
+  }, [supabaseError]); // RIMOSSA dipendenza addLog
+
+  // CORREZIONE: Effetto per salvare in localStorage senza loop infinito
+  useEffect(() => {
+    if (!useSupabaseSync && (items.length > 0 || rundownName !== 'Nuovo Rundown' || localStorage.getItem('rundown') !== null)) {
       try {
         const rundownToSave = { name: rundownName, items };
         localStorage.setItem('rundown', JSON.stringify(rundownToSave));
         setModified(true);
+        console.log('💾 [RUNDOWN CONTEXT] Rundown salvato in localStorage');
       } catch (error) {
-        console.error('RundownContext: Errore nel salvataggio del rundown nel localStorage:', error);
-        if (typeof addLog === 'function') {
-            addLog(`Errore salvataggio rundown: ${error.message}`, 'error');
-        }
+        console.error('❌ [RUNDOWN CONTEXT] Errore nel salvataggio del rundown nel localStorage:', error);
       }
     }
-  }, [items, rundownName, addLog]); // Rimosso addLog se non strettamente necessario per la logica di salvataggio
+  }, [useSupabaseSync, items, rundownName]); // RIMOSSA dipendenza addLog
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -112,85 +287,241 @@ export const RundownProvider = ({ children }) => {
   }, [connected, addLog]);
 
   const addMedia = useCallback(async (mediaData) => {
-    let duration = mediaData.duration;
-    if (!duration && mediaData.clip) {
-      duration = await getMediaDuration(mediaData.clip);
-    }
-    const newItem = {
-      id: uuidv4(),
-      type: 'MEDIA',
-      name: mediaData.name || mediaData.clip?.split('/').pop() || 'Media Sconosciuto',
-      data: {
-        clip: mediaData.clip,
-        channel: mediaData.channel || 1,
-        layer: mediaData.layer || 10,
-        customName: mediaData.customName || '',
-        loop: mediaData.loop || false,
-        autoNext: mediaData.autoNext || false,
-        linkedTemplate: mediaData.linkedTemplate || null,
-        startTime: mediaData.startTime || '00:00:00',
-        duration: duration || '00:05:00',
-        location: mediaData.location || mediaData.clip,
-        note: mediaData.note || '',
-        inPoint: mediaData.inPoint || '00:00:00',
-        outPoint: mediaData.outPoint || '',
-        notificationSent: false,
-        errorCount: 0,
-        lastError: null,
-        lastPlayTime: null
-      },
-      isPlaying: false,
-      playingStartTime: null,
-    };
-    setItems(prevItems => [...prevItems, newItem].sort((a, b) => (a.data.startTime || "0").localeCompare(b.data.startTime || "0")));
-    if (typeof addLog === 'function') addLog(`Media aggiunto: ${newItem.name}`);
-    return newItem;
-  }, [addLog, getMediaDuration]);
-
-  const addTemplate = useCallback((templateData) => {
-    let data = {};
-    if (typeof templateData.data === 'string') {
-      try {
-        data = JSON.parse(templateData.data);
-      } catch (error) {
-        data = { text: templateData.data };
+    // CORREZIONE: Verifica che ci sia un rundown attivo
+    if (!activeRundownId) {
+      console.error('❌ [RUNDOWN_CONTEXT] Nessun rundown attivo, apertura selettore rundown');
+      if (typeof addLog === 'function') {
+        addLog('❌ Nessun rundown attivo per aggiungere media', 'error');
       }
-    } else if (typeof templateData.data === 'object') {
-      data = templateData.data;
+      return null;
     }
-    const newItem = {
-      id: uuidv4(),
-      type: 'TEMPLATE',
-      name: templateData.name || templateData.template?.split('/').pop() || 'Template Sconosciuto',
-      data: {
-        template: templateData.template,
-        channel: templateData.channel || 1,
-        layer: templateData.layer || 20,
-        cgLayer: templateData.cgLayer || 1,
-        playOnLoad: templateData.playOnLoad !== undefined ? templateData.playOnLoad : true,
-        data,
-        customName: templateData.customName || '',
-        startTime: templateData.startTime || '00:00:00',
-        duration: templateData.duration || '00:01:00',
-        location: templateData.location || templateData.template,
-        note: templateData.note || '',
-        inPoint: templateData.inPoint || '00:00:00',
-        outPoint: templateData.outPoint || '',
-        notificationSent: false,
-        errorCount: 0,
-        lastError: null,
-        lastPlayTime: null
-      },
-      isPlaying: false,
-      playingStartTime: null,
-    };
-    setItems(prevItems => [...prevItems, newItem].sort((a, b) => (a.data.startTime || "0").localeCompare(b.data.startTime || "0")));
-    if (typeof addLog === 'function') addLog(`Template aggiunto: ${newItem.name}`);
-    return newItem;
-  }, [addLog]);
 
-  // Funzione per aggiungere elementi STORY completi al rundown
-  const addStory = useCallback((storyData) => {
+    console.log('🎯 [RUNDOWN_CONTEXT] Aggiunta media al rundown attivo:', activeRundownId);
+
+    if (useSupabaseSync && addMediaItem) {
+      // Usa Supabase per aggiungere il media
+      try {
+        let duration = mediaData.duration;
+        if (!duration && mediaData.clip) {
+          duration = await getMediaDuration(mediaData.clip);
+        }
+
+        const supabaseMediaData = {
+          ...mediaData,
+          duration: duration || '00:05:00',
+          customName: mediaData.customName || mediaData.name || mediaData.clip?.split('/').pop() || 'Media Sconosciuto'
+        };
+
+        const newItem = await addMediaItem(supabaseMediaData);
+
+        // CORREZIONE CRITICA: Verifica che l'elemento sia stato effettivamente aggiunto
+        if (!newItem) {
+          console.error('❌ [RUNDOWN CONTEXT] addMediaItem ha ritornato null - inserimento fallito');
+          if (typeof addLog === 'function') {
+            addLog('❌ Errore aggiunta media a Supabase - inserimento fallito', 'error');
+          }
+          throw new Error('Elemento MEDIA non aggiunto a Supabase - inserimento fallito');
+        }
+
+        if (typeof addLog === 'function') {
+          addLog(`Media aggiunto a Supabase: ${newItem.name}`);
+        }
+
+        console.log('✅ [RUNDOWN CONTEXT] Media aggiunto con successo a Supabase:', newItem);
+        return newItem;
+      } catch (error) {
+        console.error('Errore aggiunta media a Supabase:', error);
+        if (typeof addLog === 'function') {
+          addLog(`Errore aggiunta media: ${error.message}`, 'error');
+        }
+        return null;
+      }
+    } else {
+      // Fallback a localStorage
+      let duration = mediaData.duration;
+      if (!duration && mediaData.clip) {
+        duration = await getMediaDuration(mediaData.clip);
+      }
+      const newItem = {
+        id: uuidv4(),
+        type: 'MEDIA',
+        name: mediaData.name || mediaData.clip?.split('/').pop() || 'Media Sconosciuto',
+        data: {
+          clip: mediaData.clip,
+          channel: mediaData.channel || 1,
+          layer: mediaData.layer || 10,
+          customName: mediaData.customName || '',
+          loop: mediaData.loop || false,
+          autoNext: mediaData.autoNext || false,
+          linkedTemplate: mediaData.linkedTemplate || null,
+          startTime: mediaData.startTime || '00:00:00',
+          duration: duration || '00:05:00',
+          location: mediaData.location || mediaData.clip,
+          note: mediaData.note || '',
+          inPoint: mediaData.inPoint || '00:00:00',
+          outPoint: mediaData.outPoint || '',
+          notificationSent: false,
+          errorCount: 0,
+          lastError: null,
+          lastPlayTime: null
+        },
+        isPlaying: false,
+        playingStartTime: null,
+      };
+      setItems(prevItems => [...prevItems, newItem].sort((a, b) => (a.data.startTime || "0").localeCompare(b.data.startTime || "0")));
+      if (typeof addLog === 'function') addLog(`Media aggiunto (localStorage): ${newItem.name}`);
+      return newItem;
+    }
+  }, [useSupabaseSync, addMediaItem, addLog, getMediaDuration, activeRundownId]);
+
+  const addTemplate = useCallback(async (templateData) => {
+    // CORREZIONE: Verifica che ci sia un rundown attivo
+    if (!activeRundownId) {
+      console.error('❌ [RUNDOWN_CONTEXT] Nessun rundown attivo, apertura selettore rundown');
+      if (typeof addLog === 'function') {
+        addLog('❌ Nessun rundown attivo per aggiungere template', 'error');
+      }
+      return null;
+    }
+
+    console.log('🎯 [RUNDOWN_CONTEXT] Aggiunta template al rundown attivo:', activeRundownId);
+
+    if (useSupabaseSync && addTemplateItem) {
+      // Usa Supabase per aggiungere il template
+      try {
+        let data = {};
+        if (typeof templateData.data === 'string') {
+          try {
+            data = JSON.parse(templateData.data);
+          } catch (error) {
+            data = { text: templateData.data };
+          }
+        } else if (typeof templateData.data === 'object') {
+          data = templateData.data;
+        }
+
+        const supabaseTemplateData = {
+          ...templateData,
+          data,
+          customName: templateData.customName || templateData.name || templateData.template?.split('/').pop() || 'Template Sconosciuto'
+        };
+
+        const newItem = await addTemplateItem(supabaseTemplateData);
+
+        // CORREZIONE CRITICA: Verifica che l'elemento sia stato effettivamente aggiunto
+        if (!newItem) {
+          console.error('❌ [RUNDOWN CONTEXT] addTemplateItem ha ritornato null - inserimento fallito');
+          if (typeof addLog === 'function') {
+            addLog('❌ Errore aggiunta template a Supabase - inserimento fallito', 'error');
+          }
+          throw new Error('Elemento TEMPLATE non aggiunto a Supabase - inserimento fallito');
+        }
+
+        if (typeof addLog === 'function') {
+          addLog(`Template aggiunto a Supabase: ${newItem.name}`);
+        }
+
+        console.log('✅ [RUNDOWN CONTEXT] Template aggiunto con successo a Supabase:', newItem);
+        return newItem;
+      } catch (error) {
+        console.error('Errore aggiunta template a Supabase:', error);
+        if (typeof addLog === 'function') {
+          addLog(`Errore aggiunta template: ${error.message}`, 'error');
+        }
+        return null;
+      }
+    } else {
+      // Fallback a localStorage
+      let data = {};
+      if (typeof templateData.data === 'string') {
+        try {
+          data = JSON.parse(templateData.data);
+        } catch (error) {
+          data = { text: templateData.data };
+        }
+      } else if (typeof templateData.data === 'object') {
+        data = templateData.data;
+      }
+      const newItem = {
+        id: uuidv4(),
+        type: 'TEMPLATE',
+        name: templateData.name || templateData.template?.split('/').pop() || 'Template Sconosciuto',
+        data: {
+          template: templateData.template,
+          channel: templateData.channel || 1,
+          layer: templateData.layer || 20,
+          cgLayer: templateData.cgLayer || 1,
+          playOnLoad: templateData.playOnLoad !== undefined ? templateData.playOnLoad : true,
+          data,
+          customName: templateData.customName || '',
+          startTime: templateData.startTime || '00:00:00',
+          duration: templateData.duration || '00:01:00',
+          location: templateData.location || templateData.template,
+          note: templateData.note || '',
+          inPoint: templateData.inPoint || '00:00:00',
+          outPoint: templateData.outPoint || '',
+          notificationSent: false,
+          errorCount: 0,
+          lastError: null,
+          lastPlayTime: null
+        },
+        isPlaying: false,
+        playingStartTime: null,
+      };
+      setItems(prevItems => [...prevItems, newItem].sort((a, b) => (a.data.startTime || "0").localeCompare(b.data.startTime || "0")));
+      if (typeof addLog === 'function') addLog(`Template aggiunto (localStorage): ${newItem.name}`);
+      return newItem;
+    }
+  }, [useSupabaseSync, addTemplateItem, addLog, activeRundownId]);
+
+  // CORREZIONE CRITICA: Funzione per aggiungere elementi STORY completi al rundown con integrazione Supabase
+  const addStory = useCallback(async (storyData) => {
+    // CORREZIONE: Verifica che ci sia un rundown attivo
+    if (!activeRundownId) {
+      console.error('❌ [RUNDOWN_CONTEXT] Nessun rundown attivo, apertura selettore rundown');
+      if (typeof addLog === 'function') {
+        addLog('❌ Nessun rundown attivo per aggiungere storia', 'error');
+      }
+      return null;
+    }
+
+    console.log('🎯 [RUNDOWN_CONTEXT] Aggiunta storia al rundown attivo:', activeRundownId);
+
+    if (useSupabaseSync && addStoryItem) {
+      // Usa Supabase per aggiungere la storia
+      try {
+        console.log('🔄 [RUNDOWN CONTEXT] Aggiunta storia tramite Supabase:', storyData);
+
+        const supabaseStoryData = {
+          ...storyData,
+          customName: storyData.customName || storyData.name || 'Storia Sconosciuta'
+        };
+
+        const newItem = await addStoryItem(supabaseStoryData);
+
+        // CORREZIONE CRITICA: Verifica che l'elemento sia stato effettivamente aggiunto
+        if (!newItem) {
+          throw new Error('Elemento STORY non aggiunto a Supabase - possibile problema di permessi RLS');
+        }
+
+        if (typeof addLog === 'function') {
+          addLog(`Storia aggiunta a Supabase: ${newItem.name}`);
+        }
+
+        console.log('✅ [RUNDOWN CONTEXT] Storia aggiunta con successo a Supabase:', newItem);
+        return newItem;
+      } catch (error) {
+        console.error('❌ [RUNDOWN CONTEXT] Errore aggiunta storia a Supabase:', error);
+        if (typeof addLog === 'function') {
+          addLog(`Errore aggiunta storia a Supabase: ${error.message}`, 'error');
+        }
+        // Fallback al localStorage in caso di errore
+      }
+    }
+
+    // Fallback: usa localStorage se Supabase non è disponibile o in caso di errore
+    console.log('📁 [RUNDOWN CONTEXT] Aggiunta storia tramite localStorage (fallback):', storyData);
+
     const newItem = {
       id: uuidv4(),
       type: 'STORY',
@@ -234,9 +565,9 @@ export const RundownProvider = ({ children }) => {
     };
 
     setItems(prevItems => [...prevItems, newItem].sort((a, b) => (a.data.startTime || "0").localeCompare(b.data.startTime || "0")));
-    if (typeof addLog === 'function') addLog(`Storia aggiunta: ${newItem.name}`);
+    if (typeof addLog === 'function') addLog(`Storia aggiunta (localStorage): ${newItem.name}`);
     return newItem;
-  }, [addLog]);
+  }, [useSupabaseSync, addStoryItem, addLog, activeRundownId]);
 
   const removeItem = useCallback((itemId) => {
     setItems(prevItems => prevItems.filter(item => item.id !== itemId));
@@ -1017,6 +1348,31 @@ export const RundownProvider = ({ children }) => {
     if (typeof addLog === 'function') addLog('Rundown pulito');
   }, [addLog]);
 
+  // Funzione per aggiornare il nome del rundown
+  const updateRundownNameWrapper = useCallback(async (newName) => {
+    if (useSupabaseSync && updateRundownName) {
+      try {
+        await updateRundownName(newName);
+        if (typeof addLog === 'function') {
+          addLog(`Nome rundown aggiornato in Supabase: ${newName}`);
+        }
+      } catch (error) {
+        console.error('Errore aggiornamento nome rundown:', error);
+        if (typeof addLog === 'function') {
+          addLog(`Errore aggiornamento nome: ${error.message}`, 'error');
+        }
+        // Fallback locale
+        setRundownName(newName);
+      }
+    } else {
+      // Fallback localStorage
+      setRundownName(newName);
+      if (typeof addLog === 'function') {
+        addLog(`Nome rundown aggiornato (localStorage): ${newName}`);
+      }
+    }
+  }, [useSupabaseSync, updateRundownName, addLog]);
+
   const toggleScheduledPlayback = useCallback(() => {
     setScheduledPlayback(prev => {
         if (typeof addLog === 'function') addLog(`Riproduzione pianificata ${!prev ? 'attivata' : 'disattivata'}`);
@@ -1103,7 +1459,16 @@ export const RundownProvider = ({ children }) => {
     items, currentItem, rundownName, modified, autoPlay, currentPlayingIndex,
     playingItems, currentTime, scheduledPlayback, dayStartTime, timeIndicatorPosition,
     nextItemPrepared, // Aggiungiamo lo stato del precaricamento
-    setItems, setRundownName, setAutoPlay: handleAutoPlayChange,
+    // Stati Supabase
+    useSupabaseSync,
+    supabaseLoading,
+    supabaseError,
+    activeRundownId,
+    setActiveRundownId: setActiveRundownIdExternal, // CORREZIONE: Usa la nuova funzione che supporta rundown esterni
+    // Funzioni esistenti (con integrazione Supabase)
+    setItems,
+    setRundownName: updateRundownNameWrapper, // Usa la versione con Supabase
+    setAutoPlay: handleAutoPlayChange,
     addMedia, addTemplate, addStory, removeItem, updateItem, moveItem,
     playItem, stopItem, removeTemplate, updateTemplate,
     prepareNextItem, // Aggiungiamo la funzione di precaricamento

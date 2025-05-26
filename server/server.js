@@ -462,6 +462,7 @@ io.on('connection', (socket) => {
         try {
             serverLog(`Richiesta lista profili CasparCG da client ${socket.id}`);
             const profiles = profileManager.profileState.profiles;
+            serverLog(`Invio ${profiles.length} profili al client ${socket.id}: ${JSON.stringify(profiles.map(p => ({id: p.id, name: p.name})))}`);
             callback({ success: true, profiles });
         } catch (error) {
             serverLog(`Errore nella richiesta lista profili: ${error.message}`, 'error');

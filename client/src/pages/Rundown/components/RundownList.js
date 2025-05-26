@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import {
   Box,
   Typography,
@@ -377,13 +377,23 @@ const RundownList = ({
     return DEFAULT_VISIBLE_COLUMNS;
   });
 
-  // Salva le preferenze delle colonne in localStorage quando cambiano
+  // CORREZIONE CRITICA: Salva le preferenze delle colonne in localStorage quando cambiano
+  // Usa useRef per tracciare il valore precedente ed evitare loop infiniti
+  const prevVisibleColumnsRef = useRef();
+
   useEffect(() => {
-    try {
-      localStorage.setItem(COLUMN_VISIBILITY_STORAGE_KEY, JSON.stringify(visibleColumns));
-      console.log('🔧 Preferenze colonne salvate:', visibleColumns);
-    } catch (error) {
-      console.warn('Errore nel salvataggio delle preferenze colonne:', error);
+    // Salva solo se le colonne sono effettivamente cambiate
+    const columnsString = JSON.stringify(visibleColumns);
+    const prevColumnsString = JSON.stringify(prevVisibleColumnsRef.current);
+
+    if (columnsString !== prevColumnsString) {
+      try {
+        localStorage.setItem(COLUMN_VISIBILITY_STORAGE_KEY, columnsString);
+        console.log('🔧 Preferenze colonne salvate:', visibleColumns);
+        prevVisibleColumnsRef.current = visibleColumns;
+      } catch (error) {
+        console.warn('Errore nel salvataggio delle preferenze colonne:', error);
+      }
     }
   }, [visibleColumns]);
 

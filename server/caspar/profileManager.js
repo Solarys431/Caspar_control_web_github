@@ -22,7 +22,23 @@ if (!supabaseUrl || !supabaseKey) {
 }
 
 // Inizializza il client Supabase solo se le variabili d'ambiente sono definite
-const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
+const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false
+  }
+}) : null;
+
+// Log dello stato di inizializzazione Supabase
+if (supabase) {
+  console.log('[PROFILE_MANAGER] [INFO] Client Supabase inizializzato correttamente');
+  console.log(`[PROFILE_MANAGER] [DEBUG] Supabase URL: ${supabaseUrl}`);
+  console.log(`[PROFILE_MANAGER] [DEBUG] Service Key presente: ${supabaseKey ? 'SI' : 'NO'}`);
+} else {
+  console.log('[PROFILE_MANAGER] [WARNING] Client Supabase NON inizializzato - variabili d\'ambiente mancanti');
+  console.log(`[PROFILE_MANAGER] [DEBUG] SUPABASE_URL: ${supabaseUrl || 'NON DEFINITA'}`);
+  console.log(`[PROFILE_MANAGER] [DEBUG] SUPABASE_SERVICE_KEY: ${supabaseKey ? 'DEFINITA' : 'NON DEFINITA'}`);
+}
 
 // Stato dei profili e delle connessioni
 const profileState = {
@@ -122,17 +138,49 @@ async function loadProfiles() {
       return;
     }
 
-    const { data, error } = await supabase
-      .from('casparcg_profiles')
-      .select('*')
-      .order('name');
+    log('Tentativo di caricamento profili da Supabase...', 'debug');
 
-    if (error) throw error;
+    // TEST DIAGNOSTICO: Verifica connessione Supabase
+    try {
+      log('TEST: Verifica connessione Supabase con query di test...', 'debug');
+
+      // Test 1: Query count
+      const testResult = await supabase.from('casparcg_profiles').select('count', { count: 'exact', head: true });
+      log(`TEST 1: Risultato query count: ${JSON.stringify(testResult)}`, 'debug');
+
+      // Test 2: Query semplice
+      const simpleTest = await supabase.from('casparcg_profiles').select('id').limit(1);
+      log(`TEST 2: Risultato query semplice: ${JSON.stringify(simpleTest)}`, 'debug');
+
+      // Test 3: Verifica ruolo corrente
+      const { data: roleData, error: roleError } = await supabase.rpc('auth.role');
+      log(`TEST 3: Ruolo corrente - Data: ${JSON.stringify(roleData)}, Error: ${JSON.stringify(roleError)}`, 'debug');
+
+    } catch (testError) {
+      log(`TEST: Errore nella query di test: ${JSON.stringify(testError)}`, 'error');
+    }
+
+    // CORREZIONE: Usa funzione di sicurezza per bypassare problemi RLS
+    const { data, error } = await supabase.rpc('get_all_casparcg_profiles');
+
+    log(`Query profili completata. Data: ${data ? data.length : 'null'}, Error: ${error ? JSON.stringify(error) : 'null'}`, 'debug');
+
+    if (error) {
+      log(`Errore query profili: ${JSON.stringify(error)}`, 'error');
+      throw error;
+    }
 
     profileState.profiles = data || [];
     log(`Caricati ${profileState.profiles.length} profili CasparCG.`);
+
+    if (profileState.profiles.length > 0) {
+      log(`Primo profilo: ${JSON.stringify(profileState.profiles[0])}`, 'debug');
+    } else {
+      log('ATTENZIONE: Nessun profilo caricato nonostante query senza errori!', 'warning');
+    }
   } catch (error) {
     log(`Errore durante il caricamento dei profili: ${error.message}`, 'error');
+    log(`Stack trace: ${error.stack}`, 'error');
     throw error;
   }
 }
@@ -150,17 +198,25 @@ async function loadServers() {
       return;
     }
 
-    const { data, error } = await supabase
-      .from('casparcg_servers')
-      .select('*')
-      .order('name');
+    log('Tentativo di caricamento server da Supabase...', 'debug');
 
-    if (error) throw error;
+    // CORREZIONE: Usa funzione di sicurezza per bypassare problemi RLS
+    const { data, error } = await supabase.rpc('get_all_casparcg_servers');
+
+    if (error) {
+      log(`Errore query server: ${JSON.stringify(error)}`, 'error');
+      throw error;
+    }
 
     profileState.servers = data || [];
     log(`Caricati ${profileState.servers.length} server CasparCG.`);
+
+    if (profileState.servers.length > 0) {
+      log(`Primo server: ${JSON.stringify(profileState.servers[0])}`, 'debug');
+    }
   } catch (error) {
     log(`Errore durante il caricamento dei server: ${error.message}`, 'error');
+    log(`Stack trace: ${error.stack}`, 'error');
     throw error;
   }
 }
@@ -178,22 +234,25 @@ async function loadAssignments() {
       return;
     }
 
-    const { data, error } = await supabase
-      .from('profile_server_assignments')
-      .select(`
-        id,
-        profile_id,
-        server_id,
-        server_role_in_profile,
-        config_details
-      `);
+    log('Tentativo di caricamento assegnazioni da Supabase...', 'debug');
 
-    if (error) throw error;
+    // CORREZIONE: Usa funzione di sicurezza per bypassare problemi RLS
+    const { data, error } = await supabase.rpc('get_all_profile_server_assignments');
+
+    if (error) {
+      log(`Errore query assegnazioni: ${JSON.stringify(error)}`, 'error');
+      throw error;
+    }
 
     profileState.assignments = data || [];
     log(`Caricate ${profileState.assignments.length} assegnazioni server-profilo.`);
+
+    if (profileState.assignments.length > 0) {
+      log(`Prima assegnazione: ${JSON.stringify(profileState.assignments[0])}`, 'debug');
+    }
   } catch (error) {
     log(`Errore durante il caricamento delle assegnazioni: ${error.message}`, 'error');
+    log(`Stack trace: ${error.stack}`, 'error');
     throw error;
   }
 }

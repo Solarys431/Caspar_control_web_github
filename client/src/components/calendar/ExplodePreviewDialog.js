@@ -40,7 +40,7 @@ import { it } from 'date-fns/locale';
 
 /**
  * Componente per il dialogo di anteprima degli elementi da esplodere
- * 
+ *
  * @param {Object} props - Proprietà del componente
  * @param {boolean} props.open - Se il dialogo è aperto
  * @param {Function} props.onClose - Funzione per chiudere il dialogo
@@ -53,7 +53,7 @@ import { it } from 'date-fns/locale';
 const ExplodePreviewDialog = ({ open, onClose, items = [], onConfirm, scalettaName, day }) => {
   // Stato per gli elementi selezionati
   const [selectedItems, setSelectedItems] = useState([]);
-  
+
   // Stato per le opzioni di esplosione
   const [explodeOptions, setExplodeOptions] = useState({
     replaceRundown: true,
@@ -62,38 +62,58 @@ const ExplodePreviewDialog = ({ open, onClose, items = [], onConfirm, scalettaNa
     recalculateStartTimes: false,
     startTimeOffset: '00:00:00'
   });
-  
+
   // Stato per il filtro
   const [filter, setFilter] = useState({
     type: 'all',
     search: ''
   });
-  
+
   // Stato per l'ordinamento
   const [sortBy, setSortBy] = useState('startTime');
-  
+
   // Resetta gli elementi selezionati quando il dialogo viene aperto
   useEffect(() => {
     if (open) {
-      setSelectedItems(items.map(item => item.id));
+      // CORREZIONE: Rimuovi duplicati e assicurati che ogni ID sia unico
+      const uniqueItems = items.filter((item, index, self) =>
+        index === self.findIndex(i => i.id === item.id)
+      );
+
+      if (uniqueItems.length !== items.length) {
+        console.warn('⚠️ [EXPLODE PREVIEW] Elementi duplicati rilevati e rimossi:', {
+          originalCount: items.length,
+          uniqueCount: uniqueItems.length,
+          duplicates: items.length - uniqueItems.length
+        });
+      }
+
+      setSelectedItems(uniqueItems.map(item => item.id));
     }
   }, [open, items]);
-  
+
+  // CORREZIONE: Crea lista di elementi unici per evitare chiavi duplicate
+  const uniqueItems = React.useMemo(() => {
+    return items.filter((item, index, self) =>
+      index === self.findIndex(i => i.id === item.id)
+    );
+  }, [items]);
+
   // Filtra gli elementi in base al filtro
-  const filteredItems = items.filter(item => {
+  const filteredItems = uniqueItems.filter(item => {
     // Filtra per tipo
     if (filter.type !== 'all' && item.type !== filter.type) {
       return false;
     }
-    
+
     // Filtra per testo di ricerca
     if (filter.search && !item.name.toLowerCase().includes(filter.search.toLowerCase())) {
       return false;
     }
-    
+
     return true;
   });
-  
+
   // Ordina gli elementi in base all'ordinamento selezionato
   const sortedItems = [...filteredItems].sort((a, b) => {
     switch (sortBy) {
@@ -109,7 +129,7 @@ const ExplodePreviewDialog = ({ open, onClose, items = [], onConfirm, scalettaNa
         return 0;
     }
   });
-  
+
   // Gestisce la selezione/deselezione di tutti gli elementi
   const handleSelectAll = (event) => {
     if (event.target.checked) {
@@ -118,7 +138,7 @@ const ExplodePreviewDialog = ({ open, onClose, items = [], onConfirm, scalettaNa
       setSelectedItems([]);
     }
   };
-  
+
   // Gestisce la selezione/deselezione di un singolo elemento
   const handleSelectItem = (itemId) => {
     if (selectedItems.includes(itemId)) {
@@ -127,7 +147,7 @@ const ExplodePreviewDialog = ({ open, onClose, items = [], onConfirm, scalettaNa
       setSelectedItems([...selectedItems, itemId]);
     }
   };
-  
+
   // Gestisce il cambio delle opzioni di esplosione
   const handleOptionChange = (option, value) => {
     setExplodeOptions({
@@ -135,19 +155,25 @@ const ExplodePreviewDialog = ({ open, onClose, items = [], onConfirm, scalettaNa
       [option]: value
     });
   };
-  
+
   // Gestisce la conferma dell'esplosione
   const handleConfirm = () => {
-    // Filtra gli elementi selezionati
-    const itemsToExplode = items.filter(item => selectedItems.includes(item.id));
-    
+    // CORREZIONE: Filtra gli elementi selezionati usando uniqueItems per evitare duplicati
+    const itemsToExplode = uniqueItems.filter(item => selectedItems.includes(item.id));
+
+    console.log('🚀 [EXPLODE PREVIEW] Conferma esplosione:', {
+      totalItems: uniqueItems.length,
+      selectedItems: selectedItems.length,
+      itemsToExplode: itemsToExplode.length
+    });
+
     // Chiama la funzione di conferma con gli elementi selezionati e le opzioni
     onConfirm(itemsToExplode, explodeOptions);
-    
+
     // Chiude il dialogo
     onClose();
   };
-  
+
   // Restituisce l'icona appropriata per il tipo di elemento
   const getItemIcon = (type) => {
     switch (type) {
@@ -161,7 +187,7 @@ const ExplodePreviewDialog = ({ open, onClose, items = [], onConfirm, scalettaNa
         return <PlayArrowIcon fontSize="small" />;
     }
   };
-  
+
   return (
     <Dialog
       open={open}
@@ -174,14 +200,14 @@ const ExplodePreviewDialog = ({ open, onClose, items = [], onConfirm, scalettaNa
           <Typography variant="h6">
             Anteprima Esplosione Scaletta: {scalettaName}
           </Typography>
-          <Chip 
-            label={day ? format(new Date(day), 'EEEE d MMMM', { locale: it }) : 'Giorno non specificato'} 
-            color="primary" 
-            variant="outlined" 
+          <Chip
+            label={day ? format(new Date(day), 'EEEE d MMMM', { locale: it }) : 'Giorno non specificato'}
+            color="primary"
+            variant="outlined"
           />
         </Box>
       </DialogTitle>
-      
+
       <DialogContent>
         <Box sx={{ mb: 2 }}>
           <Typography variant="subtitle1" gutterBottom>
@@ -256,9 +282,9 @@ const ExplodePreviewDialog = ({ open, onClose, items = [], onConfirm, scalettaNa
             )}
           </Grid>
         </Box>
-        
+
         <Divider sx={{ my: 2 }} />
-        
+
         <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
             <Typography variant="subtitle1" sx={{ mr: 2 }}>
@@ -275,7 +301,7 @@ const ExplodePreviewDialog = ({ open, onClose, items = [], onConfirm, scalettaNa
               label="Seleziona tutti"
             />
           </Box>
-          
+
           <Box sx={{ display: 'flex', alignItems: 'center' }}>
             <FormControl variant="outlined" size="small" sx={{ minWidth: 120, mr: 2 }}>
               <InputLabel id="filter-type-label">Filtra per tipo</InputLabel>
@@ -291,7 +317,7 @@ const ExplodePreviewDialog = ({ open, onClose, items = [], onConfirm, scalettaNa
                 <MenuItem value="STORY">Storia</MenuItem>
               </Select>
             </FormControl>
-            
+
             <TextField
               label="Cerca"
               variant="outlined"
@@ -300,7 +326,7 @@ const ExplodePreviewDialog = ({ open, onClose, items = [], onConfirm, scalettaNa
               onChange={(e) => setFilter({ ...filter, search: e.target.value })}
               sx={{ mr: 2 }}
             />
-            
+
             <FormControl variant="outlined" size="small" sx={{ minWidth: 150 }}>
               <InputLabel id="sort-by-label">Ordina per</InputLabel>
               <Select
@@ -317,7 +343,7 @@ const ExplodePreviewDialog = ({ open, onClose, items = [], onConfirm, scalettaNa
             </FormControl>
           </Box>
         </Box>
-        
+
         <TableContainer component={Paper} sx={{ maxHeight: 400 }}>
           <Table stickyHeader>
             <TableHead>
@@ -389,7 +415,7 @@ const ExplodePreviewDialog = ({ open, onClose, items = [], onConfirm, scalettaNa
           </Table>
         </TableContainer>
       </DialogContent>
-      
+
       <DialogActions>
         <Button onClick={onClose}>Annulla</Button>
         <Button
