@@ -1,4 +1,14 @@
--- Schema SQL per le tabelle rundown in Supabase
+usePreviewPlayer - Dati OSC: Object
+PreviewSection.js:42 PreviewSection - Dati OSC aggiornati: Object
+index.js:749 🎯 DEBUG: Apertura Dialogo Invio Rundown
+index.js:765 🔍 Verifica permessi rundown di destinazione: 293ac7b6-c60b-4f9f-a361-4dc0cad2080c
+index.js:786 ❌ Errore nella verifica dei permessi del rundown: Error: Cannot find module '../../../utils/permissionsChecker'
+    at webpackMissingModule (index.js:770:1)
+    at async handleSendToRundown (index.js:770:1)
+handleSendToRundown @ index.js:786Understand this error
+usePreviewPlayer.js:638 usePreviewPlayer - Dati OSC: Object
+usePreviewPlayer.js:638 usePreviewPlayer - Dati OSC: Object
+Previe-- Schema SQL per le tabelle rundown in Supabase
 -- Segue gli stessi pattern delle tabelle scalette esistenti
 
 -- Abilita l'estensione UUID se non già presente
