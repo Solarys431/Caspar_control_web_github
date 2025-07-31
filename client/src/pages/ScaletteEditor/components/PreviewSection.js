@@ -216,8 +216,8 @@ const PreviewSection = ({
             position: 'relative'
           }}>
             <PreviewPlayer
-              sourceUdpUrl="udp://127.0.0.1:5004?pkt_size=1316"
-              webrtcSignalingUrl="http://127.0.0.1:8889"
+              sourceUdpUrl="udp://100.74.188.128:5004?pkt_size=1316"
+              webrtcSignalingUrl="http://100.74.188.128:8889"
               showLatency
             />
           </Box>
@@ -384,8 +384,8 @@ const PreviewSection = ({
             <Box className="no-drag" sx={{ p: 2, overflow: 'auto', flexGrow: 1 }}>
               <Box className="no-drag" sx={{ height: '300px', mb: 2 }}>
                 <PreviewPlayer
-                  sourceUdpUrl="udp://127.0.0.1:5004?pkt_size=1316"
-                  webrtcSignalingUrl="http://127.0.0.1:8889"
+                  sourceUdpUrl="udp://100.74.188.128:5004?pkt_size=1316"
+                  webrtcSignalingUrl="http://100.74.188.128:8889"
                   showLatency
                 />
               </Box>

@@ -22,6 +22,7 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import PlayArrowIcon from '@mui/icons-material/PlayArrow';
 import StopIcon from '@mui/icons-material/Stop';
 import RepeatIcon from '@mui/icons-material/Repeat';
+import LoopIcon from '@mui/icons-material/Loop';
 import AddIcon from '@mui/icons-material/Add';
 import SettingsIcon from '@mui/icons-material/Settings';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
@@ -63,7 +64,12 @@ const RundownHeader = ({
     setAutoPlay,
     autoPlay,
     playAll, // PROBLEMA 1: Importa playAll dal context invece di riceverlo come prop
-    stopAll  // PROBLEMA 1: Importa anche stopAll per completezza
+    stopAll,  // PROBLEMA 1: Importa anche stopAll per completezza
+    // LOOP AUTOMATICO: Importa funzioni e stati loop
+    loopEnabled,
+    rundownIsLooping,
+    playAllWithLoop,
+    toggleLoop
   } = useRundown();
 
   const {
@@ -155,7 +161,43 @@ const RundownHeader = ({
 
   // PROBLEMA 1: Funzione handleStopAutoPlay già definita sopra - rimossa duplicazione
 
-  // PROBLEMA 2: Riproduzione in loop del primo elemento (corretto)
+  // LOOP AUTOMATICO: Riproduzione completa rundown con loop automatico
+  const handlePlayAllWithLoop = async () => {
+    if (!connected || items.length === 0) {
+      showNotification('Nessun elemento da riprodurre o non connesso a CasparCG', 'warning');
+      return;
+    }
+
+    try {
+      console.log('Avvio riproduzione automatica con LOOP per', items.length, 'elementi');
+
+      // Avvia la riproduzione sequenziale con loop
+      if (playAllWithLoop) {
+        await playAllWithLoop();
+        console.log('Riproduzione automatica con loop avviata con successo');
+        showNotification('Riproduzione automatica con LOOP INFINITO avviata', 'success');
+      } else {
+        throw new Error('Funzione playAllWithLoop non disponibile');
+      }
+    } catch (error) {
+      console.error('Errore nella riproduzione automatica con loop:', error);
+      showNotification(`Errore nell'avvio della riproduzione con loop: ${error.message}`, 'error');
+    }
+  };
+
+  // LOOP AUTOMATICO: Toggle dello stato loop
+  const handleToggleLoop = () => {
+    try {
+      toggleLoop();
+      const newStatus = !loopEnabled;
+      showNotification(`LOOP ${newStatus ? 'ATTIVATO' : 'DISATTIVATO'}`, newStatus ? 'success' : 'info');
+    } catch (error) {
+      console.error('Errore nel toggle loop:', error);
+      showNotification(`Errore nel cambio stato loop: ${error.message}`, 'error');
+    }
+  };
+
+  // PROBLEMA 2: Riproduzione in loop del primo elemento (mantenuto per compatibilità)
   const handlePlayLoop = async () => {
     if (!connected || items.length === 0) {
       showNotification('Nessun elemento da riprodurre o non connesso a CasparCG', 'warning');
@@ -184,7 +226,7 @@ const RundownHeader = ({
         console.log('Riproduzione in loop avviata per:', firstItem.name);
 
         // PROBLEMA 2: Aggiorna lo stato per indicare che è in loop
-        showNotification(`Loop attivato: ${firstItem.data.customName || firstItem.name} - Premi Stop per fermare`, 'info');
+        showNotification(`Loop singolo attivato: ${firstItem.data.customName || firstItem.name} - Premi Stop per fermare`, 'info');
       } else {
         throw new Error('Funzione playItem non disponibile');
       }
@@ -370,6 +412,38 @@ const RundownHeader = ({
               size="small"
             >
               Play Loop
+            </Button>
+
+            {/* LOOP AUTOMATICO: Controlli loop rundown completo */}
+            <Button
+              variant="contained"
+              color={loopEnabled ? "success" : "inherit"}
+              startIcon={<LoopIcon />}
+              onClick={handlePlayAllWithLoop}
+              disabled={!connected || items.length === 0 || autoPlay}
+              size="small"
+              sx={{
+                backgroundColor: rundownIsLooping ? '#ff9800' : (loopEnabled ? '#4caf50' : undefined),
+                '&:hover': {
+                  backgroundColor: rundownIsLooping ? '#f57c00' : (loopEnabled ? '#45a049' : undefined),
+                },
+              }}
+            >
+              {rundownIsLooping ? 'Looping...' : 'Auto Loop'}
+            </Button>
+
+            <Button
+              variant={loopEnabled ? "contained" : "outlined"}
+              color={loopEnabled ? "success" : "primary"}
+              startIcon={<LoopIcon />}
+              onClick={handleToggleLoop}
+              size="small"
+              sx={{
+                minWidth: 'auto',
+                px: 1
+              }}
+            >
+              {loopEnabled ? 'LOOP ON' : 'LOOP OFF'}
             </Button>
 
             <Box sx={{ display: 'flex', gap: 1 }}>

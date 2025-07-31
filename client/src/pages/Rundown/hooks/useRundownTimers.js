@@ -94,7 +94,10 @@ const useRundownTimers = () => {
     checkItemsToStop();
   }, [currentTime, items, playingItems, stopItem, scheduledPlayback, calculateEndTime]);
 
-  // Gestione dell'auto-take quando scade il countdown
+  // DISABILITATO TEMPORANEAMENTE: Gestione dell'auto-take quando scade il countdown
+  // PROBLEMA: Questo timer causava bombardamento di comandi PLAY ogni 250ms
+  // Il nuovo sistema loop in RundownContext gestisce la sequenza automaticamente
+  /*
   useEffect(() => {
     if (!items.length) return;
 
@@ -179,6 +182,7 @@ const useRundownTimers = () => {
 
     return () => clearInterval(timer);
   }, [items, playItem, stopItem, prepareNextItem, addLog]);
+  */
 
   // Formatta il tempo di riproduzione
   const formatPlayingTime = useCallback((startTime) => {

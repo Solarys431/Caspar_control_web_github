@@ -40,7 +40,7 @@ const Settings = () => {
   } = useCaspar();
 
   // Stato per le impostazioni di connessione
-  const [connectionHost, setConnectionHost] = useState(host || 'localhost');
+  const [connectionHost, setConnectionHost] = useState(host || '100.74.188.128');
   const [connectionPort, setConnectionPort] = useState(port || 5250);
 
   // Stato per le informazioni sul server
@@ -61,7 +61,7 @@ const Settings = () => {
 
   // Aggiorna le impostazioni di connessione quando cambiano host e port
   useEffect(() => {
-    setConnectionHost(host || 'localhost');
+    setConnectionHost(host || '100.74.188.128');
     setConnectionPort(port || 5250);
   }, [host, port]);
 

@@ -85,10 +85,9 @@ const RundownPage = () => {
 
   // Gestione della riproduzione
   const {
-    // playItem, // ESLint: 'playItem' is assigned a value but never used.
-    // stopItem, // ESLint: 'stopItem' is assigned a value but never used.
-    playAll,
-    stopAll
+    playItem,
+    stopItem
+    // playAll e stopAll sono disponibili direttamente in useRundown() context
   } = useRundownPlayback();
 
   // Gestione dei dialoghi del rundown (aggiungi/modifica elementi)
@@ -123,8 +122,7 @@ const RundownPage = () => {
         connected={connected}
         showNotification={showNotification}
         dialogsState={dialogsState}
-        playAll={playAll} // Passa la funzione playAll
-        stopAll={stopAll} // Passa la funzione stopAll
+        // playAll e stopAll ora importati direttamente in RundownHeader dal context
         // Stati Supabase
         useSupabaseSync={useSupabaseSync}
         supabaseLoading={supabaseLoading}
@@ -161,8 +159,7 @@ const RundownPage = () => {
               {/* Orologio e controlli di riproduzione principali */}
               <RundownClock
                 connected={connected}
-                playAll={playAll}
-                stopAll={stopAll}
+                // playAll e stopAll dovrebbero essere importati dal context in RundownClock
               />
 
               {/* Timeline visuale degli eventi */}

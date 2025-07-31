@@ -13,7 +13,7 @@ import { useRundown } from '../../../contexts/RundownContext';
 /**
  * Componente per visualizzare l'orologio e i controlli di riproduzione.
  */
-const RundownClock = ({ connected, playAll, stopAll }) => {
+const RundownClock = ({ connected }) => {
   const {
     // currentTime non utilizzato
     scheduledPlayback,

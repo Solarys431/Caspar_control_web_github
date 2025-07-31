@@ -19,7 +19,7 @@ export const CasparProvider = ({ children }) => {
   };
 
   const [connected, setConnected] = useState(false);
-  const [host, setHost] = useState('localhost'); // Host di CasparCG, non del backend
+  const [host, setHost] = useState('100.74.188.128'); // Host di CasparCG, non del backend
   const [port, setPort] = useState(5250);   // Porta AMCP di CasparCG
   const [socket, setSocket] = useState(null); // Socket per la connessione al backend (server.js)
   const [logs, setLogs] = useState([]);
@@ -45,7 +45,7 @@ export const CasparProvider = ({ children }) => {
 
   useEffect(() => {
     addLog('Inizializzazione del socket client per il backend...');
-    const configuredServerUrl = process.env.REACT_APP_API_URL || 'http://localhost:5000';
+    const configuredServerUrl = process.env.REACT_APP_API_URL || 'http://100.74.188.128:5000';
     addLog(`Tentativo di connessione Socket.IO al backend: ${configuredServerUrl}`);
 
     const newSocket = io(configuredServerUrl, {
@@ -665,27 +665,55 @@ export const CasparProvider = ({ children }) => {
     return sendControlCommand('LOADBG', channel, layer, clip, options);
   }, [sendControlCommand]);
   const casparCgAdd = useCallback((channel, layer, cgLayer, template, playOnLoad = true, data = null) => {
-    let dataString = "";
-    if (data && Object.keys(data).length > 0) {
-      try { dataString = JSON.stringify(data).replace(/"/g, '\\"'); }
-      catch (e) { addLog(`Errore JSON per CG ADD: ${e.message}`, 'error'); dataString = '"{}"'; }
-    } else { dataString = '"{}"'; }
+    let dataString;
+    
+    // CORREZIONE DEFINITIVA: Gestione corretta dei dati JSON senza virgolette doppie
+    if (data && typeof data === 'object' && Object.keys(data).length > 0) {
+      try { 
+        const jsonData = JSON.stringify(data);
+        // Escape virgolette interne ma non aggiungere virgolette extra
+        dataString = jsonData.replace(/"/g, '\\"'); 
+      }
+      catch (e) { 
+        addLog(`Errore JSON per CG ADD: ${e.message}`, 'error'); 
+        dataString = '{}'; 
+      }
+    } else { 
+      // CORREZIONE DEFINITIVA: Per dati vuoti, invia solo {} senza virgolette extra
+      dataString = '{}'; 
+    }
 
     // Utilizziamo il parametro playOnLoad per determinare se il template deve essere riprodotto immediatamente
     const playOnLoadValue = playOnLoad ? "1" : "0";
 
+    // CORREZIONE DEFINITIVA: Le virgolette vengono aggiunte qui nel comando finale
     let command = `CG ${channel}-${layer} ADD ${cgLayer} "${template}" ${playOnLoadValue} "${dataString}"`;
     return sendCommand(command);
   }, [sendCommand, addLog]);
   const casparCgPlay = useCallback((channel, layer, cgLayer) => sendCommand(`CG ${channel}-${layer} PLAY ${cgLayer}`), [sendCommand]);
   const casparCgStop = useCallback((channel, layer, cgLayer) => sendCommand(`CG ${channel}-${layer} STOP ${cgLayer}`), [sendCommand]);
   const casparCgRemove = useCallback((channel, layer, cgLayer) => sendCommand(`CG ${channel}-${layer} REMOVE ${cgLayer}`), [sendCommand]);
-  const casparCgUpdate = useCallback((channel, layer, cgLayer, data) => { /* ...invariato... */
-    let dataString = "";
-    if (data && Object.keys(data).length > 0) {
-      try { dataString = JSON.stringify(data).replace(/"/g, '\\"'); }
-      catch (e) { addLog(`Errore JSON per CG UPDATE: ${e.message}`, 'error'); return Promise.reject({success: false, message: "Errore dati JSON"}); }
-    } else { addLog('CG UPDATE senza dati validi.', 'warning'); dataString = '"{}"'; }
+  const casparCgUpdate = useCallback((channel, layer, cgLayer, data) => {
+    let dataString;
+    
+    // CORREZIONE DEFINITIVA: Gestione corretta dei dati JSON per UPDATE
+    if (data && typeof data === 'object' && Object.keys(data).length > 0) {
+      try { 
+        const jsonData = JSON.stringify(data);
+        // Escape virgolette interne ma non aggiungere virgolette extra
+        dataString = jsonData.replace(/"/g, '\\"'); 
+      }
+      catch (e) { 
+        addLog(`Errore JSON per CG UPDATE: ${e.message}`, 'error'); 
+        return Promise.reject({success: false, message: "Errore dati JSON"}); 
+      }
+    } else { 
+      addLog('CG UPDATE senza dati validi.', 'warning'); 
+      // CORREZIONE DEFINITIVA: Per dati vuoti, invia solo {} senza virgolette extra
+      dataString = '{}'; 
+    }
+    
+    // CORREZIONE DEFINITIVA: Le virgolette vengono aggiunte qui nel comando finale
     return sendCommand(`CG ${channel}-${layer} UPDATE ${cgLayer} "${dataString}"`);
   }, [sendCommand, addLog]);
   const cgInvoke = useCallback((channel, layer, cgLayer, method) => sendCommand(`CG ${channel}-${layer} INVOKE ${cgLayer} "${method}"`), [sendCommand]);

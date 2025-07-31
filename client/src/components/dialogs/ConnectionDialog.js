@@ -15,13 +15,13 @@ import { useCaspar } from '../../contexts/CasparContext';
 
 const ConnectionDialog = ({ open, onClose }) => {
   const { connected, host, port, connect, loading, error } = useCaspar();
-  const [formHost, setFormHost] = useState(host || 'localhost');
+  const [formHost, setFormHost] = useState(host || '100.74.188.128');
   const [formPort, setFormPort] = useState(port || 5250);
   const [formError, setFormError] = useState('');
 
   // Aggiorna i valori del form quando cambiano host e port
   useEffect(() => {
-    setFormHost(host || 'localhost');
+    setFormHost(host || '100.74.188.128');
     setFormPort(port || 5250);
   }, [host, port]);
 

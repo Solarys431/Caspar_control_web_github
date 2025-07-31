@@ -39,7 +39,7 @@ import useRundownTimers from '../hooks/useRundownTimers';
 import { format } from 'date-fns';
 import StoryItemDialog from './StoryItemDialog';
 import usePlaybackSync from '../../../hooks/usePlaybackSync';
-import { broadcastComponents, broadcastColors, broadcastAnimations } from '../../../styles/broadcastTheme';
+import { broadcastColors, broadcastAnimations } from '../../../styles/broadcastTheme';
 import { useCaspar } from '../../../contexts/CasparContext'; // PROBLEMA 3: Import per OSC data
 
 
@@ -344,13 +344,7 @@ const RundownList = ({
     // handleLinkTemplateDialogOpen // Assicurati che sia definito in dialogsState se usato nel menu
   } = dialogsState;
 
-   // MODIFICA/AGGIUNTA START: Logica per identificare l'elemento "NEXT"
-  const playingItemIndex = items.findIndex(item => item.isPlaying);
-  let nextItemId = null;
-  if (playingItemIndex !== -1 && playingItemIndex < items.length - 1) {
-    nextItemId = items[playingItemIndex + 1].id;
-  }
-  // MODIFICA/AGGIUNTA END
+  // DEPRECATED: Old nextItemId logic removed - now using itemState system from context
 
   // Stati per il filtro degli elementi esplosi
   const [filterMenuAnchorEl, setFilterMenuAnchorEl] = useState(null);
@@ -756,7 +750,7 @@ const RundownList = ({
 
   // MIGLIORAMENTO 1: Funzione helper per renderizzare il contenuto di ogni colonna
   const renderColumnContent = (columnId, item, index, itemProps) => {
-    const { isPlaying, isLive, isPreview, isNext, isExploded, isMediaWithLinkedTemplate, isComplexStory, hasMedia, hasTemplates, hasMultipleTemplates } = itemProps;
+    const { isPlaying, isLive, isPreview, isOnAir, isNext, isExploded, isMediaWithLinkedTemplate, isComplexStory, hasMedia, hasTemplates, hasMultipleTemplates } = itemProps;
 
     switch (columnId) {
       case 'index':
@@ -786,9 +780,14 @@ const RundownList = ({
             width: '80px',
             textAlign: 'center', // PROBLEMA 3: Centratura testo
             fontFamily: 'monospace',
-            flexShrink: 0
+            flexShrink: 0,
+            color: item.isPlaying ? (item.type === 'MEDIA' ? '#4caf50' : '#2196f3') : 'inherit',
+            fontWeight: item.isPlaying ? 'bold' : 'normal'
           }}>
-            {item.data.duration || (item.type === 'MEDIA' ? '00:05:00' : '00:01:00')}
+            {item.isPlaying && item.playingStartTime 
+              ? formatPlayingTime(item.playingStartTime)
+              : (item.data.duration || (item.type === 'MEDIA' ? '00:05:00' : '00:01:00'))
+            }
           </Box>
         );
 
@@ -1117,19 +1116,7 @@ const RundownList = ({
                 </Box>
               )}
 
-              {/* Tempo di riproduzione */}
-              {item.isPlaying && item.playingStartTime && (
-                <Typography
-                  variant="caption"
-                  sx={{
-                    color: item.type === 'MEDIA' ? '#4caf50' : '#2196f3',
-                    fontSize: '0.7rem',
-                    textAlign: 'center' // PROBLEMA 4: Centratura testo
-                  }}
-                >
-                  In onda: {formatPlayingTime(item.playingStartTime)}
-                </Typography>
-              )}
+              {/* Tempo di riproduzione rimosso - ora mostrato nella colonna DURATION */}
             </Box>
 
             {/* Indicatori aggiuntivi (Loop) */}
@@ -1245,8 +1232,8 @@ const RundownList = ({
             alignItems: 'center',
             flexShrink: 0
           }}>
-            {/* CORREZIONE CRITICA: Priorità LIVE > PREVIEW > NEXT > ESPLOSO */}
-            {isLive ? (
+            {/* CORREZIONE CRITICA: Priorità LIVE/ON AIR > PREVIEW > NEXT > ESPLOSO */}
+            {(isLive || isOnAir) ? (
               <Box sx={{
                 background: broadcastColors.gradients.onAir,
                 color: broadcastColors.text.primary,
@@ -1760,8 +1747,10 @@ const RundownList = ({
             // CORREZIONE CRITICA: Determinare stato corretto usando playbackSync
             const isLive = isItemLive(item.id); // LIVE = in onda su canale 1 (Rundown)
             const isPreview = isItemPreview(item.id); // PREVIEW = in riproduzione su canale 3 (Scalette)
+            // STATI DINAMICI: Usa SOLO il nuovo campo itemState dal context
+            const isOnAir = item.data?.itemState === 'onair';
+            const isNext = item.data?.itemState === 'next';
             const isPlaying = item.isPlaying || isLive; // Mantieni compatibilità con logica esistente
-            const isNext = item.id === nextItemId;
 
             // Verifica se l'elemento è esploso (ha sourceInfo)
             const isExploded = item.data && item.data.sourceInfo;
@@ -1786,6 +1775,7 @@ const RundownList = ({
               isPlaying,
               isLive, // CORREZIONE CRITICA: Aggiungi stato LIVE
               isPreview, // CORREZIONE CRITICA: Aggiungi stato PREVIEW
+              isOnAir, // STATI DINAMICI: Aggiungi stato ON AIR
               isNext,
               isExploded,
               isMediaWithLinkedTemplate,

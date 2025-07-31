@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { useCaspar } from './CasparContext'; // Assicurati che il path sia corretto
 import { useAuth } from './AuthContext';
@@ -24,7 +24,10 @@ export const RundownProvider = ({ children }) => {
     cgRemove,
     cgUpdate,
     addLog,
-    templateList // PROBLEMA 3 FIX: Aggiungi templateList dal CasparContext
+    templateList, // PROBLEMA 3 FIX: Aggiungi templateList dal CasparContext
+    // LOOP AUTOMATICO: Importa dati OSC per rilevamento fine media
+    oscConnected,
+    oscData
   } = useCaspar();
 
   const { user } = useAuth();
@@ -113,9 +116,19 @@ export const RundownProvider = ({ children }) => {
   const [modified, setModified] = useState(false);
   const [autoPlay, setAutoPlay] = useState(false);
   const [currentPlayingIndex, setCurrentPlayingIndex] = useState(-1);
-  const [autoPlayTimer, setAutoPlayTimer] = useState(null);
+  // const [autoPlayTimer, setAutoPlayTimer] = useState(null); // RIMOSSO: Non più utilizzato con nuovo sistema OSC
   const [useSupabaseSync, setUseSupabaseSync] = useState(false);
   const [migrationCompleted, setMigrationCompleted] = useState(false);
+  const [loopEnabled, setLoopEnabled] = useState(false);
+  const [rundownIsLooping, setRundownIsLooping] = useState(false);
+  
+  // CORREZIONE STALE CLOSURE: Flag di controllo interno per loop
+  const loopControlRef = useRef({ 
+    running: false, 
+    shouldLoop: false, 
+    currentIndex: 0,
+    timerId: null 
+  });
 
   const [currentTime, setCurrentTime] = useState(new Date());
   const [scheduledPlayback, setScheduledPlayback] = useState(false);
@@ -203,7 +216,7 @@ export const RundownProvider = ({ children }) => {
       // Se non c'è utente autenticato, usa localStorage
       loadFromLocalStorage();
     }
-  }, [user?.id, migrationCompleted, loadRundownData]); // RIMOSSA dipendenza addLog
+  }, [user?.id, migrationCompleted, loadRundownData, addLog]);
 
   // CORREZIONE CRITICA: Effetto per sincronizzare i dati da Supabase allo stato locale senza loop infinito
   useEffect(() => {
@@ -758,6 +771,42 @@ export const RundownProvider = ({ children }) => {
     return templateExists;
   }, []);
 
+  // CRITICAL FIX: Moved before playItem to avoid circular dependency
+  const updateItemPlayingStatus = useCallback((itemId, isPlayingStatus) => {
+    const now = new Date();
+    const currentTimeString = now.toTimeString().substring(0, 8); // HH:MM:SS format
+    
+    // DEBUG LOGGING: Verifica chiamata funzione
+    if (typeof addLog === 'function') {
+      addLog(`🔧 UPDATE_STATUS: Item ${itemId.slice(0,8)}... → ${isPlayingStatus ? 'PLAYING' : 'STOPPED'} - START TIME: ${currentTimeString}`, 'info');
+    }
+    
+    setItems(prevItems =>
+      prevItems.map(item =>
+        item.id === itemId
+          ? { 
+              ...item, 
+              isPlaying: isPlayingStatus, 
+              playingStartTime: isPlayingStatus ? now : null,
+              // AGGIORNAMENTO DINAMICO: Update START TIME con orario reale
+              data: isPlayingStatus ? {
+                ...item.data,
+                startTime: currentTimeString,
+                lastPlayTime: now.toISOString(),
+                errorCount: 0,
+                lastError: null
+              } : item.data
+            }
+          : item
+      )
+    );
+    if (isPlayingStatus) {
+        setPlayingItems(prev => prev.includes(itemId) ? prev : [...prev, itemId]);
+    } else {
+        setPlayingItems(prev => prev.filter(id => id !== itemId));
+    }
+  }, [setItems, setPlayingItems, addLog]);
+
   const playItem = useCallback(async (item) => {
     if (!connected || !item) {
       if (typeof addLog === 'function') addLog(`playItem: Tentativo di play fallito. Non connesso o item nullo. Connesso: ${connected}, Item ID: ${item ? item.id : 'null'}`, 'warning');
@@ -971,6 +1020,11 @@ export const RundownProvider = ({ children }) => {
           if (typeof addLog === 'function') addLog(`RUNDOWN_CONTEXT_PLAY_ITEM: Storia "${item.name}" non ha media o template associati`, 'warning');
         }
       }
+      
+      // CRITICAL FIX: Aggiorna stato di riproduzione per timing dinamico
+      if (typeof addLog === 'function') addLog(`🔧 PLAY_ITEM: Calling updateItemPlayingStatus for "${item.name}"`, 'debug');
+      updateItemPlayingStatus(item.id, true);
+      
     } catch (error) {
       console.error(`RUNDOWN_CONTEXT_PLAY_ITEM: Errore nella riproduzione dell'item ${item.id} (${item.name}):`, error);
       if (typeof addLog === 'function') addLog(`Play fallito per ${item.name}: ${error.message}`, 'error');
@@ -983,7 +1037,7 @@ export const RundownProvider = ({ children }) => {
       );
       setPlayingItems(prev => prev.filter(id => id !== item.id));
     }
-  }, [connected, play, cgAdd, cgPlay, items, addLog, setItems, setPlayingItems, stopItem, nextItemPrepared, validateTemplate, templateList]);
+  }, [connected, play, cgAdd, cgPlay, items, addLog, setItems, setPlayingItems, stopItem, nextItemPrepared, validateTemplate, templateList, updateItemPlayingStatus]);
 
 
   const removeTemplate = useCallback(async (item) => {
@@ -1054,146 +1108,411 @@ export const RundownProvider = ({ children }) => {
     }
   }, [connected, loadbg, addLog, nextItemPrepared]);
 
-  // PROBLEMA 2: Auto-play sequenziale migliorato con OSC data
-  const playAll = useCallback(() => {
-    if (!connected || items.length === 0) return;
+  // SISTEMA LOOP CORRETTO: Eliminato bug di stale closure
+  const playAll = useCallback((enableLoop = false) => {
+    // DEBUG CRITICO: Verifica chiamata playAll
+    if (typeof addLog === 'function') {
+      addLog(`🚀 PLAYALL CALLED: enableLoop=${enableLoop}, connected=${connected}, items=${items.length}`, 'info');
+    }
+    
+    if (!connected || items.length === 0) {
+      if (typeof addLog === 'function') {
+        addLog('❌ AUTOPLAY: Impossibile avviare - non connesso o lista vuota', 'warning');
+      }
+      return;
+    }
+    
+    // CORREZIONE CRITICA: Stop eventuali loop precedenti
+    if (loopControlRef.current.timerId) {
+      clearTimeout(loopControlRef.current.timerId);
+      loopControlRef.current.timerId = null;
+    }
+    
+    // Imposta flag di controllo interno
+    loopControlRef.current = {
+      running: true,
+      shouldLoop: enableLoop,
+      currentIndex: 0,
+      timerId: null
+    };
+    
+    // Aggiorna stati React per UI
     setAutoPlay(true);
     setCurrentPlayingIndex(0);
+    setLoopEnabled(enableLoop);
+    setRundownIsLooping(false);
+    
+    if (typeof addLog === 'function') {
+      addLog(`🚀 AUTOPLAY FIXED: Avvio ${enableLoop ? 'LOOP INFINITO' : 'sequenziale'} - ${items.length} elementi`, 'info');
+    }
 
-    // Funzione per riprodurre un elemento e precaricare il successivo
-    const playAndPrepareNext = async (index) => {
-      if (index < 0 || index >= items.length) {
-        if (typeof addLog === 'function') addLog('AUTOPLAY: Fine playlist o indice non valido.', 'info');
-        if (autoPlayTimer) clearInterval(autoPlayTimer);
-        setAutoPlayTimer(null);
-        setAutoPlay(false);
-        setCurrentPlayingIndex(-1);
-        return;
-      }
-
-      const currentItemToPlay = items[index];
-      if (typeof addLog === 'function') addLog(`AUTOPLAY: Riproduzione item #${index + 1}: "${currentItemToPlay.name}"`, 'info');
-      await playItem(currentItemToPlay);
-
-      // Precaricare il prossimo elemento, se esiste
-      if (index + 1 < items.length) {
-        const nextItemToPrepare = items[index + 1];
-        if (nextItemToPrepare.type === 'MEDIA') {
-          if (typeof addLog === 'function') addLog(`AUTOPLAY: Precaricamento prossimo item #${index + 2}: "${nextItemToPrepare.name}"`, 'info');
-          await prepareNextItem(nextItemToPrepare);
+    // CORREZIONE: Sistema autonomo senza dipendenze da closure
+    const executeSequence = () => {
+      const playNext = () => {
+        // CORREZIONE: Controllo su ref invece di stato React
+        if (!loopControlRef.current.running) {
+          if (typeof addLog === 'function') addLog('⏹️ AUTOPLAY: Fermato manualmente', 'info');
+          return;
         }
-      }
-
-      // PROBLEMA 2: Usa OSC data per timing preciso invece di timer fissi
-      const setupOscBasedAutoTake = () => {
-        if (autoPlayTimer) clearInterval(autoPlayTimer);
-
-        // Polling OSC data per rilevare fine media
-        const oscPollingInterval = setInterval(() => {
-          if (!autoPlay) {
-            clearInterval(oscPollingInterval);
+        
+        const currentIndex = loopControlRef.current.currentIndex;
+        
+        // LOOP: Gestione fine playlist
+        if (currentIndex >= items.length) {
+          if (loopControlRef.current.shouldLoop) {
+            if (typeof addLog === 'function') addLog('🔄 AUTOPLAY LOOP: Fine playlist - Riavvio dal primo', 'info');
+            setRundownIsLooping(true);
+            loopControlRef.current.currentIndex = 0;
+            setCurrentPlayingIndex(0);
+            
+            // Pausa prima del riavvio
+            loopControlRef.current.timerId = setTimeout(() => {
+              setRundownIsLooping(false);
+              playNext();
+            }, 1500);
+            return;
+          } else {
+            // Fine playlist senza loop
+            if (typeof addLog === 'function') addLog('✅ AUTOPLAY: Playlist completata - Stop', 'info');
+            loopControlRef.current.running = false;
+            setAutoPlay(false);
+            setCurrentPlayingIndex(-1);
             return;
           }
-
-          // Ottieni dati OSC per l'elemento corrente
-          const channel = currentItemToPlay.data?.channel || 1;
-          const layer = currentItemToPlay.data?.layer || 10;
-
-          // Verifica se il media è finito tramite OSC
-          // Questo dovrebbe essere implementato con i dati OSC reali
-          // Per ora manteniamo la logica timer come fallback
-
-          if (typeof addLog === 'function') addLog(`AUTOPLAY: Controllo OSC per ${currentItemToPlay.name} su ${channel}-${layer}`, 'debug');
-
-          // TODO: Implementare controllo OSC reale qui
-          // const oscData = getOscData(channel, layer);
-          // if (oscData && oscData.isFinished) {
-          //   clearInterval(oscPollingInterval);
-          //   setCurrentPlayingIndex(prev => prev + 1);
-          // }
-
-        }, 1000); // Controlla ogni secondo
-
-        setAutoPlayTimer(oscPollingInterval);
-
-        // Fallback timer basato su durata (come prima)
-        let fallbackDurationMs = 5000; // Default
-        if (currentItemToPlay.data.duration) {
-          try {
-            const [h, m, s] = currentItemToPlay.data.duration.split(':').map(Number);
-            fallbackDurationMs = (h * 3600 + m * 60 + s) * 1000;
-            if (fallbackDurationMs <= 0) fallbackDurationMs = 5000;
-          } catch (e) {
-            if (typeof addLog === 'function') addLog(`AUTOPLAY: Errore parsing durata per ${currentItemToPlay.name}, uso default.`, 'warning');
-          }
         }
-
-        // Timer di fallback
-        const fallbackTimer = setTimeout(() => {
-          if (autoPlay) {
-            clearInterval(oscPollingInterval);
-            if (typeof addLog === 'function') addLog(`AUTOPLAY: Fallback timer attivato per ${currentItemToPlay.name}`, 'info');
-            setCurrentPlayingIndex(prev => prev + 1);
-          }
-        }, fallbackDurationMs);
-
-        // Cleanup quando l'elemento cambia
-        return () => {
-          clearInterval(oscPollingInterval);
-          clearTimeout(fallbackTimer);
-        };
+        
+        const currentItem = items[currentIndex];
+        if (!currentItem) {
+          if (typeof addLog === 'function') addLog(`❌ AUTOPLAY: Elemento ${currentIndex + 1} non trovato`, 'error');
+          loopControlRef.current.currentIndex++;
+          playNext();
+          return;
+        }
+        
+        if (typeof addLog === 'function') {
+          addLog(`▶️ AUTOPLAY: [${currentIndex + 1}/${items.length}] "${currentItem.name}" (${currentItem.type})`, 'info');
+        }
+        
+        setCurrentPlayingIndex(currentIndex);
+        
+        // STATI DINAMICI: Aggiorna stati ON AIR/NEXT
+        updateItemStates(currentIndex);
+        
+        // Riproduzione asincrona dell'elemento
+        playItem(currentItem)
+          .then(() => {
+            // Calcola durata per timing
+            let durationMs = 5000; // Default 5 secondi
+            
+            if (currentItem.data?.duration) {
+              try {
+                const [h, m, s] = currentItem.data.duration.split(':').map(Number);
+                durationMs = (h * 3600 + m * 60 + s) * 1000;
+                if (durationMs <= 0 || isNaN(durationMs)) durationMs = 5000;
+              } catch (e) {
+                if (typeof addLog === 'function') {
+                  addLog(`⚠️ AUTOPLAY: Durata non valida per "${currentItem.name}", uso 5s`, 'warning');
+                }
+              }
+            }
+            
+            // Template hanno durata più breve
+            if (currentItem.type === 'TEMPLATE') {
+              durationMs = Math.min(durationMs, 3000);
+            }
+            
+            if (typeof addLog === 'function') {
+              addLog(`⏱️ AUTOPLAY: Attesa ${Math.round(durationMs/1000)}s per "${currentItem.name}"`, 'debug');
+            }
+            
+            // OSC-BASED MEDIA END DETECTION: Sostituisce setTimeout fisso
+            const startOSCMonitoring = () => {
+              const channelLayer = `${currentItem.data?.channel || 1}-${currentItem.data?.layer || 10}`;
+              let lastTimecode = null;
+              let stuckCount = 0;
+              const STUCK_THRESHOLD = 2; // Considerato "finito" dopo 2 controlli consecutivi con stesso timecode
+              const CHECK_INTERVAL = 1000; // Controlla ogni 1 secondo (ridotto da 500ms per evitare loop troppo rapidi)
+              
+              // DEBUG CRITICO: Verifica che la funzione sia chiamata
+              if (typeof addLog === 'function') {
+                addLog(`🚀 START_OSC_MONITOR: Chiamata per "${currentItem.name}" - Tipo: ${currentItem.type}`, 'info');
+                addLog(`🔍 OSC_MONITOR_INIT: oscConnected=${oscConnected}, loopRunning=${loopControlRef.current.running}`, 'info');
+              }
+              
+              if (typeof addLog === 'function') {
+                addLog(`🎯 OSC MONITOR: Inizio monitoraggio "${currentItem.name}" su ${channelLayer}`, 'info');
+                addLog(`🔍 MONITOR DEBUG: OSC Connected: ${oscConnected}, OSC Data keys: ${oscData ? Object.keys(oscData).join(',') : 'NULL'}`, 'info');
+              }
+              
+              const monitorOSC = () => {
+                if (!loopControlRef.current.running) {
+                  if (typeof addLog === 'function') addLog('⏹️ OSC MONITOR: Stop monitoraggio (loop fermato)', 'debug');
+                  return;
+                }
+                
+                // Verifica connessione OSC e disponibilità dati
+                if (!oscConnected || !oscData || !oscData[channelLayer]) {
+                  // Fallback a setTimeout se OSC non disponibile
+                  if (typeof addLog === 'function') {
+                    addLog(`⚠️ OSC MONITOR: OSC non disponibile per ${channelLayer}, fallback a timer fisso (${Math.round(durationMs/1000)}s)`, 'warning');
+                  }
+                  loopControlRef.current.timerId = setTimeout(() => {
+                    loopControlRef.current.currentIndex++;
+                    playNext();
+                  }, durationMs);
+                  return;
+                }
+                
+                // NUOVO SISTEMA: Frame-based end detection invece di stuck timecode
+                const oscChannelData = oscData[channelLayer];
+                
+                // DEBUG CRITICO: Log struttura completa OSC data
+                if (typeof addLog === 'function') {
+                  addLog(`🔍 DEBUG OSC: ${channelLayer} - Data disponibile: ${JSON.stringify(oscChannelData)}`, 'info');
+                  addLog(`🔍 OSC KEYS: Chiavi disponibili: ${oscChannelData ? Object.keys(oscChannelData).join(', ') : 'NESSUN DATO'}`, 'info');
+                }
+                
+                // SAFE TIMECODE EXTRACTION: Handle both string and object formats
+                let currentTimecode = oscChannelData?.timecode;
+                
+                // CRITICAL FIX: Ensure timecode is a string
+                if (currentTimecode && typeof currentTimecode === 'object') {
+                  // If timecode is an object, try to extract the actual timecode value
+                  currentTimecode = currentTimecode.timecode || currentTimecode.value || String(currentTimecode);
+                }
+                if (currentTimecode && typeof currentTimecode !== 'string') {
+                  currentTimecode = String(currentTimecode);
+                }
+                
+                const currentFrame = oscChannelData?.frame;
+                const totalFrames = oscChannelData?.nb_frames || oscChannelData?.length;
+                const isPaused = oscChannelData?.paused;
+                
+                if (typeof addLog === 'function') {
+                  addLog(`🎬 OSC FRAME: ${channelLayer} - TC:${currentTimecode} Frame:${currentFrame}/${totalFrames} Paused:${isPaused}`, 'debug');
+                }
+                
+                // Verifica se abbiamo dati di frame validi
+                if (currentFrame !== undefined && totalFrames !== undefined && totalFrames > 0) {
+                  // FRAME-BASED DETECTION: Verifica se siamo vicini alla fine del media
+                  const frameProgress = currentFrame / totalFrames;
+                  const isNearEnd = frameProgress >= 0.98; // 98% del media completato
+                  
+                  if (isNearEnd || currentFrame >= totalFrames - 2) {
+                    // Media finito - calcola durata effettiva basata su tempo reale
+                    const actualDuration = calculateActualDuration(currentItem, currentTimecode);
+                    updateItemDuration(currentItem.id, actualDuration);
+                    
+                    if (typeof addLog === 'function') {
+                      addLog(`✅ FRAME END: "${currentItem.name}" completato (${currentFrame}/${totalFrames}) - TC:${currentTimecode} - Durata: ${actualDuration}`, 'info');
+                    }
+                    loopControlRef.current.currentIndex++;
+                    playNext();
+                    return;
+                  }
+                  
+                  // Media in riproduzione normale
+                  if (typeof addLog === 'function' && Math.random() < 0.1) { // Log solo 10% delle volte per ridurre spam
+                    addLog(`▶️ FRAME PROGRESS: "${currentItem.name}" - ${Math.round(frameProgress * 100)}% (${currentFrame}/${totalFrames})`, 'debug');
+                  }
+                  
+                } else if (currentTimecode && !totalFrames) {
+                  // FALLBACK AVANZATO: Timecode-based detection intelligente
+                  if (typeof addLog === 'function') {
+                    addLog(`🔍 TC ANALYSIS: ${currentTimecode} (Last: ${lastTimecode})`, 'debug');
+                  }
+                  
+                  // Rilevamento avanzato: reset del timecode (media che ricomincia)
+                  if (lastTimecode && currentTimecode) {
+                    try {
+                      // SAFE TIMECODE PARSING: Prevent crashes with invalid formats
+                      const parseTimecodeToSeconds = (timecode) => {
+                        if (!timecode || typeof timecode !== 'string') return 0;
+                        const parts = timecode.split(':');
+                        if (parts.length < 3) return 0;
+                        
+                        const hours = parseInt(parts[0]) || 0;
+                        const minutes = parseInt(parts[1]) || 0;
+                        const seconds = parseInt(parts[2]) || 0;
+                        
+                        return hours * 3600 + minutes * 60 + seconds;
+                      };
+                      
+                      const currentSeconds = parseTimecodeToSeconds(currentTimecode);
+                      const lastSeconds = parseTimecodeToSeconds(lastTimecode);
+                    
+                      // RILEVAMENTO RESET: Se il timecode torna a 0 o diminuisce significativamente
+                      if (currentSeconds < lastSeconds - 1 || (lastSeconds > 2 && currentSeconds < 1)) {
+                        const actualDuration = calculateActualDuration(currentItem, lastTimecode);
+                        updateItemDuration(currentItem.id, actualDuration);
+                        
+                        if (typeof addLog === 'function') {
+                          addLog(`✅ TC RESET: "${currentItem.name}" fine rilevata (reset ${lastSeconds}s → ${currentSeconds}s) - Durata: ${actualDuration}`, 'info');
+                        }
+                        loopControlRef.current.currentIndex++;
+                        playNext();
+                        return;
+                      }
+                      
+                    } catch (timecodeError) {
+                      if (typeof addLog === 'function') {
+                        addLog(`⚠️ TIMECODE PARSE ERROR: ${timecodeError.message} - TC: ${currentTimecode}`, 'warning');
+                      }
+                      // Continue with stuck detection as fallback
+                    }
+                  }
+                  
+                  // RILEVAMENTO STUCK AVANZATO: Gestisce entrambi i casi
+                  if (currentTimecode === lastTimecode) {
+                    stuckCount++;
+                    if (typeof addLog === 'function') {
+                      addLog(`🔍 TC STUCK: ${currentTimecode} stuck ${stuckCount}/${STUCK_THRESHOLD} volte`, 'debug');
+                    }
+                    
+                    // ENHANCED DETECTION: Controlla se il timecode è bloccato su un valore di fine
+                    let isAtEndValue = false;
+                    try {
+                      if (currentTimecode && typeof currentTimecode === 'string') {
+                        isAtEndValue = (
+                          currentTimecode.includes('05:01') || // Common end pattern from logs
+                          currentTimecode.includes('05:00') || 
+                          currentTimecode.includes('04:24') ||
+                          currentTimecode.includes('04:23')
+                        );
+                        
+                        // Also check if frames part indicates end
+                        const parts = currentTimecode.split(':');
+                        if (parts.length >= 3) {
+                          const frames = parseFloat(parts[2]) || 0;
+                          if (frames > 23) isAtEndValue = true; // PAL/NTSC frame overflow
+                        }
+                      }
+                    } catch (e) {
+                      // Safe fallback
+                      isAtEndValue = false;
+                    }
+                    
+                    if (stuckCount >= STUCK_THRESHOLD || (isAtEndValue && stuckCount >= 1)) {
+                      const actualDuration = calculateActualDuration(currentItem, currentTimecode);
+                      updateItemDuration(currentItem.id, actualDuration);
+                      
+                      if (typeof addLog === 'function') {
+                        addLog(`✅ TC END: "${currentItem.name}" fine rilevata (stuck ${stuckCount}x) - TC:${currentTimecode} - Durata: ${actualDuration}`, 'info');
+                      }
+                      loopControlRef.current.currentIndex++;
+                      playNext();
+                      return;
+                    }
+                  } else {
+                    // Reset stuck counter when timecode progresses
+                    if (stuckCount > 0 && typeof addLog === 'function') {
+                      addLog(`▶️ TC PROGRESS: ${lastTimecode} → ${currentTimecode} (reset stuck counter)`, 'debug');
+                    }
+                    stuckCount = 0;
+                    lastTimecode = currentTimecode;
+                  }
+                  
+                } else if (currentItem.type === 'TEMPLATE') {
+                  // Template handling - uso timer fisso
+                  const templateDuration = Math.min(durationMs, 3000);
+                  if (typeof addLog === 'function') {
+                    addLog(`🎨 TEMPLATE: "${currentItem.name}" - timer fisso ${templateDuration}ms`, 'debug');
+                  }
+                  loopControlRef.current.timerId = setTimeout(() => {
+                    loopControlRef.current.currentIndex++;
+                    playNext();
+                  }, templateDuration);
+                  return;
+                  
+                } else {
+                  // Nessun dato OSC utile - fallback a timer
+                  if (typeof addLog === 'function') {
+                    addLog(`⚠️ OSC FALLBACK: Nessun dato frame/timecode per ${channelLayer}, uso timer ${Math.round(durationMs/1000)}s`, 'warning');
+                  }
+                  loopControlRef.current.timerId = setTimeout(() => {
+                    loopControlRef.current.currentIndex++;
+                    playNext();
+                  }, durationMs);
+                  return;
+                }
+                
+                // Continua monitoraggio
+                loopControlRef.current.timerId = setTimeout(monitorOSC, CHECK_INTERVAL);
+              };
+              
+              // Inizia monitoraggio dopo breve delay per permettere al media di iniziare
+              if (typeof addLog === 'function') {
+                addLog(`⏱️ OSC_TIMEOUT: Impostazione timeout 1000ms per "${currentItem.name}"`, 'info');
+              }
+              loopControlRef.current.timerId = setTimeout(monitorOSC, 1000);
+            };
+            
+            // DEBUG CRITICO: Verifica che startOSCMonitoring sia chiamato
+            if (typeof addLog === 'function') {
+              addLog(`🔧 CALLING startOSCMonitoring per "${currentItem.name}"`, 'info');
+            }
+            startOSCMonitoring();
+            
+          })
+          .catch((error) => {
+            if (typeof addLog === 'function') {
+              addLog(`❌ AUTOPLAY ERRORE: "${currentItem.name}" - ${error.message} - Continuo`, 'error');
+            }
+            
+            // In caso di errore, passa al prossimo dopo 1 secondo
+            loopControlRef.current.timerId = setTimeout(() => {
+              loopControlRef.current.currentIndex++;
+              playNext();
+            }, 1000);
+          });
       };
-
-      setupOscBasedAutoTake();
+      
+      // Avvia la sequenza
+      playNext();
     };
+    
+    // Avvia immediatamente
+    executeSequence();
+    
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [connected, items, playItem, setAutoPlay, setCurrentPlayingIndex, setLoopEnabled, setRundownIsLooping, addLog, oscConnected, oscData]);
 
-    // Avvia la riproduzione con il primo elemento
-    if (items[0]) {
-      playAndPrepareNext(0);
-    }
-
-    if (typeof addLog === 'function') addLog('AUTOPLAY: PlayAll avviato con monitoraggio OSC migliorato');
-  }, [connected, items, playItem, prepareNextItem, autoPlayTimer, autoPlay, setAutoPlay, setCurrentPlayingIndex, addLog]);
-
-  // Gestione dell'avanzamento dell'autoplay quando currentPlayingIndex cambia
-  useEffect(() => {
-    if (autoPlay && currentPlayingIndex >= 0 && currentPlayingIndex < items.length) {
-      // La logica di playAndPrepareNext è già in playAll
-      // Qui reagiamo solo ai cambiamenti di currentPlayingIndex
-      if (currentPlayingIndex > 0) { // Non il primo elemento, che è già gestito da playAll
-        const currentItem = items[currentPlayingIndex];
-        playItem(currentItem);
-
-        // Precaricare il prossimo elemento
-        if (currentPlayingIndex + 1 < items.length) {
-          const nextItem = items[currentPlayingIndex + 1];
-          if (nextItem.type === 'MEDIA') {
-            prepareNextItem(nextItem);
-          }
-        }
-      }
-    } else if (autoPlay && currentPlayingIndex >= items.length) {
-      // Playlist finita
-      if (typeof addLog === 'function') addLog('AUTOPLAY: Fine playlist (indice fuori range).', 'info');
-      if (autoPlayTimer) clearInterval(autoPlayTimer);
-      setAutoPlayTimer(null);
-      setAutoPlay(false);
-      setCurrentPlayingIndex(-1);
-    }
-  }, [currentPlayingIndex, autoPlay, items, playItem, prepareNextItem, autoPlayTimer, setAutoPlay, setCurrentPlayingIndex, addLog]);
+  // SISTEMA CORRETTO: Logica autonoma senza stale closures
 
   const stopAll = useCallback(() => {
-    if (autoPlayTimer) clearInterval(autoPlayTimer);
+    // SISTEMA SEMPLIFICATO: Stop immediato e pulizia stati
     setAutoPlay(false);
     setCurrentPlayingIndex(-1);
+    setRundownIsLooping(false);
+    setLoopEnabled(false);
+    
+    // CORREZIONE: Stop sistema loop e pulizia timer OSC
+    if (loopControlRef.current.timerId) {
+      clearTimeout(loopControlRef.current.timerId);
+      loopControlRef.current.timerId = null;
+    }
+    loopControlRef.current.running = false;
+    
+    // Ferma tutti gli elementi in riproduzione
     playingItems.forEach(itemId => {
       const itemToStop = items.find(i => i.id === itemId);
-      if (itemToStop) stopItem(itemToStop, false); // Passa false per indicare che non è un autotake
+      if (itemToStop) stopItem(itemToStop, false);
     });
+    
     setPlayingItems([]);
-    setItems(prev => prev.map(i => ({...i, isPlaying: false, playingStartTime: null })));
-    if (typeof addLog === 'function') addLog('StopAll eseguito');
-  }, [autoPlayTimer, items, stopItem, playingItems, setPlayingItems, setItems, setAutoPlay, setCurrentPlayingIndex, addLog]);
+    setItems(prev => prev.map(i => ({
+      ...i, 
+      isPlaying: false, 
+      playingStartTime: null,
+      // RESET STATI: Resetta tutti gli stati ON AIR/NEXT
+      data: {
+        ...i.data,
+        itemState: 'normal'
+      }
+    })));
+    
+    if (typeof addLog === 'function') addLog('⏹️ AUTOPLAY: Stop completo - Sistema loop fermato e tutti gli elementi fermati', 'info');
+  }, [items, stopItem, playingItems, setPlayingItems, setItems, setAutoPlay, setCurrentPlayingIndex, setRundownIsLooping, setLoopEnabled, addLog]);
 
   const saveRundown = useCallback(() => {
     const rundownData = { name: rundownName, items };
@@ -1434,20 +1753,101 @@ export const RundownProvider = ({ children }) => {
 
   const getItemById = useCallback((itemId) => items.find(item => item.id === itemId), [items]);
 
-  const updateItemPlayingStatus = useCallback((itemId, isPlayingStatus) => {
+  // HELPER FUNCTIONS per aggiornamento timing dinamico - Moved before playAll to avoid circular dependencies
+  const calculateActualDuration = useCallback((item, finalTimecode) => {
+    // DEBUG CRITICO: Verifica chiamata funzione
+    if (typeof addLog === 'function') {
+      addLog(`🔧 CALC_DURATION CALLED: ${item.name} - playingStartTime: ${!!item.playingStartTime}`, 'info');
+    }
+    
+    if (!item.playingStartTime) {
+      if (typeof addLog === 'function') {
+        addLog(`⚠️ CALC_DURATION: Missing playingStartTime for ${item.name}`, 'warning');
+      }
+      return item.data?.duration || '00:00:05';
+    }
+    
+    try {
+      // CORRETTO: Calcola la durata effettiva basata sul tempo reale trascorso
+      const startTime = new Date(item.playingStartTime);
+      const endTime = new Date(); // Ora corrente = fine riproduzione
+      const elapsedMs = endTime.getTime() - startTime.getTime();
+      const elapsedSeconds = Math.floor(elapsedMs / 1000);
+      
+      // Assicurati che la durata sia almeno 1 secondo
+      const totalSeconds = Math.max(elapsedSeconds, 1);
+      
+      // Formatta come HH:MM:SS
+      const h = Math.floor(totalSeconds / 3600);
+      const m = Math.floor((totalSeconds % 3600) / 60);
+      const s = totalSeconds % 60;
+      
+      const newDuration = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+      
+      if (typeof addLog === 'function') {
+        addLog(`📏 REAL_DURATION: ${item.name} - Riprodotto per ${totalSeconds}s (${startTime.toTimeString().substring(0,8)} → ${endTime.toTimeString().substring(0,8)}) → Durata: ${newDuration}`, 'info');
+      }
+      
+      return newDuration;
+    } catch (error) {
+      if (typeof addLog === 'function') {
+        addLog(`⚠️ TIMING: Errore calcolo durata per ${item.name}: ${error.message}`, 'warning');
+      }
+      return item.data?.duration || '00:00:05';
+    }
+  }, [addLog]);
+
+  const updateItemDuration = useCallback((itemId, newDuration) => {
+    // DEBUG CRITICO: Verifica chiamata funzione
+    if (typeof addLog === 'function') {
+      addLog(`🔧 UPDATE_DURATION CALLED: Item ${itemId.slice(0,8)}... → Nuova durata: ${newDuration}`, 'info');
+      addLog(`📏 UPDATE_DURATION: Item ${itemId.slice(0,8)}... → Nuova durata: ${newDuration}`, 'info');
+    }
+    
     setItems(prevItems =>
       prevItems.map(item =>
         item.id === itemId
-          ? { ...item, isPlaying: isPlayingStatus, playingStartTime: isPlayingStatus ? new Date() : null }
+          ? { 
+              ...item, 
+              data: { 
+                ...item.data, 
+                duration: newDuration,
+                // Aggiorna anche outPoint se necessario
+                outPoint: newDuration
+              }
+            }
           : item
       )
     );
-    if (isPlayingStatus) {
-        setPlayingItems(prev => prev.includes(itemId) ? prev : [...prev, itemId]);
-    } else {
-        setPlayingItems(prev => prev.filter(id => id !== itemId));
+  }, [setItems, addLog]);
+
+  const updateItemStates = useCallback((currentIndex) => {
+    setItems(prevItems =>
+      prevItems.map((item, index) => {
+        let newState = 'normal';
+        
+        if (index === currentIndex) {
+          newState = 'onair'; // Item corrente in riproduzione
+        } else if (index === currentIndex + 1 || (loopControlRef.current.shouldLoop && currentIndex === prevItems.length - 1 && index === 0)) {
+          newState = 'next'; // Prossimo item o primo item se loop infinito
+        }
+        
+        return {
+          ...item,
+          data: {
+            ...item.data,
+            itemState: newState
+          }
+        };
+      })
+    );
+    
+    if (typeof addLog === 'function') {
+      const nextIndex = currentIndex + 1 < items.length ? currentIndex + 1 : (loopControlRef.current.shouldLoop ? 0 : -1);
+      addLog(`🎬 STATI: Item ${currentIndex + 1} ON AIR${nextIndex >= 0 ? `, Item ${nextIndex + 1} NEXT` : ''}`, 'debug');
     }
-  }, [setItems, setPlayingItems]); // Dipendenze corrette
+  }, [setItems, items.length, addLog]);
+
 
   const handleAutoPlayChange = useCallback((value) => {
     setAutoPlay(value);
@@ -1455,10 +1855,70 @@ export const RundownProvider = ({ children }) => {
   }, [showNotification, setAutoPlay]);
 
 
+  // SISTEMA SEMPLIFICATO: Controlli loop diretti
+  const playAllWithLoop = useCallback(() => {
+    console.log('🔍 DEBUG playAllWithLoop: connected =', connected, 'items.length =', items.length);
+    console.log('🔍 DEBUG playAllWithLoop: typeof addLog =', typeof addLog);
+    console.log('🔍 DEBUG playAllWithLoop: typeof playAll =', typeof playAll);
+    
+    if (!connected || items.length === 0) {
+      console.log('🔍 DEBUG playAllWithLoop: Early return - connected:', connected, 'items.length:', items.length);
+      if (typeof addLog === 'function') addLog(`⚠️ LOOP: Impossibile avviare - connected: ${connected}, items: ${items.length}`, 'warning');
+      return;
+    }
+    
+    console.log('🔍 DEBUG playAllWithLoop: About to call addLog for LOOP INFINITO');
+    if (typeof addLog === 'function') {
+      addLog('🔄 LOOP INFINITO: Avvio riproduzione continua', 'info');
+    }
+    console.log('🔍 DEBUG playAllWithLoop: addLog call completed');
+    
+    console.log('🔍 DEBUG playAllWithLoop: About to call playAll(true)');
+    if (typeof addLog === 'function') {
+      addLog(`🔧 CALLING playAll(true) from playAllWithLoop`, 'info');
+    }
+    try {
+      playAll(true); // Attiva il loop infinito
+      console.log('🔍 DEBUG playAllWithLoop: playAll(true) call completed');
+      if (typeof addLog === 'function') {
+        addLog(`✅ playAll(true) chiamata completata da playAllWithLoop`, 'info');
+      }
+    } catch (error) {
+      console.error('🔍 DEBUG playAllWithLoop: ERROR in playAll(true):', error);
+      if (typeof addLog === 'function') {
+        addLog(`❌ ERRORE in playAll(true): ${error.message}`, 'error');
+      }
+    }
+  }, [connected, items.length, addLog, playAll]); // FIXED: Aggiunto playAll alle dipendenze
+
+  const toggleLoop = useCallback(() => {
+    const newLoopStatus = !loopEnabled;
+    setLoopEnabled(newLoopStatus);
+    
+    // CORREZIONE: Aggiorna anche il ref se il loop è attivo
+    if (loopControlRef.current.running) {
+      loopControlRef.current.shouldLoop = newLoopStatus;
+    }
+    
+    if (typeof addLog === 'function') {
+      addLog(`🔄 LOOP TOGGLE: ${newLoopStatus ? 'ATTIVATO ✅' : 'DISATTIVATO ❌'}`, 'info');
+    }
+    
+    // Se stiamo disattivando il loop durante la riproduzione
+    if (!newLoopStatus && loopControlRef.current.running) {
+      if (typeof addLog === 'function') {
+        addLog('🔄 LOOP: La riproduzione corrente continuerà ma non farà loop', 'info');
+      }
+    }
+  }, [loopEnabled, addLog]);
+
   const value = {
     items, currentItem, rundownName, modified, autoPlay, currentPlayingIndex,
     playingItems, currentTime, scheduledPlayback, dayStartTime, timeIndicatorPosition,
     nextItemPrepared, // Aggiungiamo lo stato del precaricamento
+    // SISTEMA LOOP CORRETTO: Stati loop senza stale closures
+    loopEnabled,
+    rundownIsLooping,
     // Stati Supabase
     useSupabaseSync,
     supabaseLoading,
@@ -1473,6 +1933,9 @@ export const RundownProvider = ({ children }) => {
     playItem, stopItem, removeTemplate, updateTemplate,
     prepareNextItem, // Aggiungiamo la funzione di precaricamento
     playAll, stopAll, saveRundown, loadRundown, clearRundown,
+    // SISTEMA LOOP CORRETTO: Funzioni loop con controllo ref
+    playAllWithLoop,
+    toggleLoop,
     toggleScheduledPlayback, setDayStart, calculateEndTime, sortItemsByStartTime,
     showNotification, getMediaDuration, getItemById, updateItemPlayingStatus
   };

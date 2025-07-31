@@ -4,8 +4,8 @@ import { Typography } from '@mui/material';
 import './PreviewPlayer.css';
 
 const PreviewPlayer = ({
-  sourceUdpUrl = 'udp://127.0.0.1:5004?pkt_size=1316',
-  webrtcSignalingUrl = 'http://127.0.0.1:8889',
+  sourceUdpUrl = 'udp://100.74.188.128:5004?pkt_size=1316',
+  webrtcSignalingUrl = 'http://100.74.188.128:8889',
   showLatency = true,
 }) => {
   const videoRef = useRef(null);
