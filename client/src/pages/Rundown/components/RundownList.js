@@ -425,8 +425,8 @@ const RundownList = ({
   // RICHIESTA 1: Hook per sincronizzazione stato riproduzione
   const playbackSync = usePlaybackSync();
 
-  // PROBLEMA 3: Hook per OSC data
-  const { getOscData, getTimecode, oscConnected } = useCaspar();
+  // PROBLEMA 3: Hook per OSC data - MIGLIORAMENTO 2: Aggiungi mediaLengths
+  const { getOscData, getTimecode, oscConnected, mediaLengths } = useCaspar();
 
   // CORREZIONE CRITICA: Funzioni helper per determinare stato elementi
   const isItemLive = (itemId) => playbackSync.isItemLive(itemId);
@@ -443,33 +443,60 @@ const RundownList = ({
     return Array.from(scalette);
   }, [items]);
 
-  // PROBLEMA 3: Helper function per rilevare fine media tramite OSC data
-  const isMediaFinished = useCallback((oscData, timecode) => {
+  // MIGLIORAMENTO 2: Helper function migliorata per rilevare fine media
+  const isMediaFinished = useCallback((oscData, timecode, mediaLengthData) => {
     // Verifica se abbiamo dati OSC validi
     if (!oscData || !oscConnected) return false;
 
-    // Verifica se abbiamo frame e length per calcolo preciso
+    // METODO 1: Frame-based detection (più preciso)
     if (typeof oscData.frame === 'number' && typeof oscData.length === 'number' && oscData.length > 0) {
       const progress = (oscData.frame / oscData.length) * 100;
-      // Media finito se progresso >= 98% (margine di sicurezza per live production)
-      const isFinished = progress >= 98 && !oscData.paused;
-
+      // MIGLIORAMENTO 2: Riduco soglia a 95% per rilevamento più preciso
+      const isFinished = progress >= 95 && !oscData.paused;
       if (isFinished) {
-        console.log(`🎬 [OSC-DETECTION] Media finito rilevato: ${progress.toFixed(2)}% (Frame: ${oscData.frame}/${oscData.length})`);
+        console.log(`🎬 [OSC-DETECTION] Media finito (frame): ${progress.toFixed(2)}% (${oscData.frame}/${oscData.length})`);
       }
-
       return isFinished;
     }
 
-    // Fallback: se non abbiamo dati frame/length, usa timecode
+    // METODO 2: Timecode-based detection con durata media
+    if (timecode && mediaLengthData?.frames > 0) {
+      // Converti timecode corrente in frame
+      const currentFrames = timecodeToFrames(timecode);
+      if (currentFrames > 0) {
+        const progress = (currentFrames / mediaLengthData.frames) * 100;
+        const isFinished = progress >= 95 && !oscData.paused;
+        if (isFinished) {
+          console.log(`🎬 [OSC-DETECTION] Media finito (timecode): ${progress.toFixed(2)}% (${currentFrames}/${mediaLengthData.frames})`);
+        }
+        return isFinished;
+      }
+    }
+
+    // METODO 3: Fallback con timecode stalled detection
     if (timecode && timecode !== '00:00:00:00') {
-      // Considera finito se timecode è fermo per più di 2 secondi (indica fine media)
-      // Questo è un fallback meno preciso
-      return false; // Per ora disabilitato, preferiamo frame/length
+      // Per ora disabilitato, troppo impreciso
+      return false;
     }
 
     return false;
   }, [oscConnected]);
+
+  // MIGLIORAMENTO 2: Helper per convertire timecode in frame (assumendo 25fps)
+  const timecodeToFrames = useCallback((timecode) => {
+    if (!timecode || timecode === '00:00:00:00') return 0;
+    
+    try {
+      const parts = timecode.split(':');
+      if (parts.length !== 4) return 0;
+      
+      const [hours, minutes, seconds, frames] = parts.map(Number);
+      const totalSeconds = hours * 3600 + minutes * 60 + seconds;
+      return totalSeconds * 25 + frames; // Assumiamo 25fps
+    } catch (e) {
+      return 0;
+    }
+  }, []);
 
   // PROBLEMA 3: Funzione OSC-based per auto-sequential su PLAY manuali
   const setupManualAutoSequential = useCallback((currentItem) => {
@@ -513,8 +540,11 @@ const RundownList = ({
           console.log(`🎬 [OSC-MONITORING] ${currentItem.name}: TC=${currentTimecode}, Frame=${oscData?.frame}/${oscData?.length}, Paused=${oscData?.paused}`);
         }
 
-        // Verifica se il media è finito
-        if (isMediaFinished(oscData, currentTimecode)) {
+        // MIGLIORAMENTO 2: Verifica se il media è finito con dati di durata
+        const mediaKey = `${channel}-${layer}`;
+        const mediaLengthData = mediaLengths[mediaKey];
+        
+        if (isMediaFinished(oscData, currentTimecode, mediaLengthData)) {
           console.log(`🎬 [AUTO-SEQUENTIAL] Fine media rilevata per ${currentItem.name}, avvio ${nextItem.name}`);
 
           // Ferma il monitoring
@@ -528,27 +558,44 @@ const RundownList = ({
       }, 500); // Polling ogni 500ms per bilanciare precisione e performance
     };
 
-    // Fallback timer per robustezza
+    // MIGLIORAMENTO 2: Fallback timer intelligente con durata media reale
     const setupFallbackTimer = () => {
       let durationMs = 5000; // Default 5 secondi
-      if (currentItem.data?.duration) {
+      
+      // METODO 1: Usa durata da mediaLengths OSC (più preciso)
+      const mediaKey = `${channel}-${layer}`;
+      const mediaLengthData = mediaLengths[mediaKey];
+      
+      if (mediaLengthData?.frames > 0) {
+        // Converti frames in millisecondi (assumendo 25fps)
+        durationMs = Math.round((mediaLengthData.frames / 25) * 1000);
+        console.log(`🎬 [FALLBACK-TIMER] Usando durata OSC: ${durationMs}ms (${mediaLengthData.frames} frames)`);
+      }
+      // METODO 2: Fallback alla durata item se disponibile
+      else if (currentItem.data?.duration) {
         try {
           const [h, m, s] = currentItem.data.duration.split(':').map(Number);
           durationMs = (h * 3600 + m * 60 + s) * 1000;
-          if (durationMs <= 0) durationMs = 5000;
+          console.log(`🎬 [FALLBACK-TIMER] Usando durata item: ${durationMs}ms`);
         } catch (e) {
-          console.warn('🎬 [AUTO-SEQUENTIAL] Errore parsing durata, uso default');
+          console.warn('🎬 [FALLBACK-TIMER] Errore parsing durata item, uso default');
         }
       }
+      
+      // Aggiungi margine di sicurezza del 10% per evitare interruzioni premature
+      const safetyMargin = durationMs * 0.1;
+      const finalDurationMs = Math.max(durationMs + safetyMargin, 5000);
+      
+      console.log(`🎬 [FALLBACK-TIMER] Timer impostato su ${finalDurationMs}ms per ${currentItem.name}`);
 
       fallbackTimer = setTimeout(() => {
         if (isSequentialActive) {
-          console.log(`🎬 [AUTO-SEQUENTIAL] Fallback timer attivato per ${currentItem.name}`);
+          console.log(`🎬 [AUTO-SEQUENTIAL] Fallback timer attivato per ${currentItem.name} dopo ${finalDurationMs}ms`);
           isSequentialActive = false;
           if (oscPollingInterval) clearInterval(oscPollingInterval);
           executeAutoSequential();
         }
-      }, durationMs);
+      }, finalDurationMs);
     };
 
     // Esegue la transizione al prossimo elemento
@@ -577,8 +624,8 @@ const RundownList = ({
             source: 'rundown'
           });
 
-          // Continua la catena auto-sequential
-          setupManualAutoSequential(nextItem);
+          // DISABILITATO: Auto-sequential ora gestito dal RundownContext
+          // setupManualAutoSequential(nextItem); // DISABILITATO per evitare conflitti
 
           showNotification(`Auto-sequential: ${nextItem.data.customName || nextItem.name}`, 'info');
         } else {
@@ -600,7 +647,7 @@ const RundownList = ({
       if (oscPollingInterval) clearInterval(oscPollingInterval);
       if (fallbackTimer) clearTimeout(fallbackTimer);
     };
-  }, [items, playItem, stopItem, playbackSync, showNotification, getOscData, getTimecode, oscConnected, isMediaFinished]);
+  }, [items, playItem, stopItem, playbackSync, showNotification, getOscData, getTimecode, oscConnected, isMediaFinished, mediaLengths, timecodeToFrames]);
 
   // PROBLEMA 3: Riproduzione di un item con auto-sequential
   const handlePlayItem = async (item) => {
@@ -620,8 +667,8 @@ const RundownList = ({
         source: 'rundown'
       });
 
-      // PROBLEMA 3: Attiva auto-sequential per PLAY manuali
-      setupManualAutoSequential(item);
+      // PROBLEMA 3: DISABILITATO - Auto-sequential ora gestito direttamente dal RundownContext
+      // setupManualAutoSequential(item); // DISABILITATO per evitare conflitti con MIGLIORAMENTO 2
 
       showNotification(`Riproduzione avviata: ${item.data.customName || item.name}`, 'success');
     } catch (error) {

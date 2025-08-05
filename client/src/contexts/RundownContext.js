@@ -1174,11 +1174,11 @@ export const RundownProvider = ({ children }) => {
             loopControlRef.current.currentIndex = 0;
             setCurrentPlayingIndex(0);
             
-            // Pausa prima del riavvio
+            // OTTIMIZZAZIONE: Riavvio fluido senza pausa per continuità broadcast
             loopControlRef.current.timerId = setTimeout(() => {
               setRundownIsLooping(false);
               playNext();
-            }, 1500);
+            }, 100); // Ridotto da 1500ms a 100ms per continuità fluida
             return;
           } else {
             // Fine playlist senza loop
