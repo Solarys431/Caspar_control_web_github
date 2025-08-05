@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import io from 'socket.io-client';
 
 // Crea il context
@@ -37,11 +37,75 @@ export const CasparProvider = ({ children }) => {
   const [timecodes, setTimecodes] = useState({});
   const [mediaLengths, setMediaLengths] = useState({});
 
+  // MIGLIORAMENTO 1: OSC Throttling & Batching
+  const oscUpdateBatchRef = useRef({});
+  const oscThrottleTimerRef = useRef(null);
+  const lastOscLogTimeRef = useRef(0);
+
   const addLog = useCallback((message, level = 'info') => {
     const timestamp = new Date().toLocaleTimeString();
     setLogs((prevLogs) => [{ timestamp, message: `[${level.toUpperCase()}] ${message}` }, ...prevLogs.slice(0, 199)]); // Limita a 200 log
     // console.log(`[${level.toUpperCase()}] ${timestamp} - ${message}`);
   }, []);
+
+  // MIGLIORAMENTO 1: Funzione per throttling OSC updates
+  const processBatchedOscUpdates = useCallback(() => {
+    const batch = oscUpdateBatchRef.current;
+    if (Object.keys(batch).length === 0) return;
+
+    // Log throttled: solo ogni 2 secondi
+    const now = Date.now();
+    if (now - lastOscLogTimeRef.current > 2000) {
+      const channelKeys = Object.keys(batch);
+      console.log(`🎬 [OSC-BATCH] Aggiornamento ${channelKeys.length} canali:`, channelKeys.join(', '));
+      lastOscLogTimeRef.current = now;
+    }
+
+    // Applica tutti gli updates in batch
+    setOscData(prev => ({ ...prev, ...batch }));
+
+    // Aggiorna timecodes in batch
+    const newTimecodes = {};
+    const newMediaLengths = {};
+
+    Object.entries(batch).forEach(([key, state]) => {
+      if (state.timecode?.time) {
+        newTimecodes[key] = state.timecode.time;
+      }
+      if (state.length?.frames || state.length?.length) {
+        const frames = state.length.frames || state.length.length || 0;
+        const timecode = state.length.timecode || '';
+        newMediaLengths[key] = { frames, timecode };
+      }
+    });
+
+    if (Object.keys(newTimecodes).length > 0) {
+      setTimecodes(prev => ({ ...prev, ...newTimecodes }));
+    }
+    if (Object.keys(newMediaLengths).length > 0) {
+      setMediaLengths(prev => ({ ...prev, ...newMediaLengths }));
+    }
+
+    // Reset batch
+    oscUpdateBatchRef.current = {};
+  }, []);
+
+  // MIGLIORAMENTO 1: Funzione per accumulare OSC updates
+  const batchOscUpdate = useCallback((key, state) => {
+    // Accumula nel batch
+    oscUpdateBatchRef.current[key] = {
+      ...oscUpdateBatchRef.current[key],
+      ...state
+    };
+
+    // Clear existing timer
+    if (oscThrottleTimerRef.current) {
+      clearTimeout(oscThrottleTimerRef.current);
+    }
+
+    // Schedule batch processing (200ms throttle)
+    oscThrottleTimerRef.current = setTimeout(processBatchedOscUpdates, 200);
+  }, [processBatchedOscUpdates]);
 
   useEffect(() => {
     addLog('Inizializzazione del socket client per il backend...');
@@ -267,106 +331,36 @@ export const CasparProvider = ({ children }) => {
       }));
     });
 
-    // Gestione dello stato OSC globale
+    // Gestione dello stato OSC globale - MIGLIORAMENTO 1: Con throttling
     newSocket.on('osc:state', (data) => {
       const { key, state } = data;
-      console.log(`Ricevuto stato OSC per ${key}:`, state);
-
-      // Aggiorna lo stato OSC globale
-      setOscData(prev => ({
-        ...prev,
-        [key]: {
-          ...prev[key],
-          ...state
-        }
-      }));
-
-      // Aggiorna anche i timecode e le lunghezze se presenti
-      if (state.timecode) {
-        setTimecodes(prev => ({
-          ...prev,
-          [key]: state.timecode.time
-        }));
-      }
-
-      if (state.length) {
-        // Verifica che length e length.frames esistano
-        if (typeof state.length.frames === 'number' || typeof state.length.length === 'number') {
-          const frames = state.length.frames || state.length.length || 0;
-          const timecode = state.length.timecode || '';
-
-          console.log(`Aggiornamento lunghezza media per ${key}: ${frames} frames (${timecode})`);
-
-          setMediaLengths(prev => ({
-            ...prev,
-            [key]: {
-              frames: frames,
-              timecode: timecode
-            }
-          }));
-        }
-      }
+      
+      // MIGLIORAMENTO 1: Usa batching invece di update immediato
+      batchOscUpdate(key, state);
     });
 
-    // Gestione dello stato OSC completo
+    // Gestione dello stato OSC completo - MIGLIORAMENTO 1: Con throttling
     newSocket.on('osc:state:all', (allState) => {
-      console.log('Ricevuto stato OSC completo:', allState);
-
-      // Aggiorna lo stato OSC globale
-      setOscData(allState);
-
-      // Aggiorna anche i timecode e le lunghezze
-      const newTimecodes = {};
-      const newMediaLengths = {};
-
-      // Estrai i timecode e le lunghezze da tutti gli stati
+      // MIGLIORAMENTO 1: Batch all state updates insieme
       Object.entries(allState).forEach(([key, state]) => {
-        if (state.timecode) {
-          newTimecodes[key] = state.timecode.time;
-        }
-
-        if (state.length) {
-          // Verifica che length e length.frames esistano
-          if (typeof state.length.frames === 'number' || typeof state.length.length === 'number') {
-            const frames = state.length.frames || state.length.length || 0;
-            const timecode = state.length.timecode || '';
-
-            // Log solo per il canale di preview (3-1)
-            if (key === '3-1') {
-              console.log(`Aggiornamento lunghezza media per ${key} (stato completo): ${frames} frames (${timecode})`);
-            }
-
-            newMediaLengths[key] = {
-              frames: frames,
-              timecode: timecode
-            };
-          }
-        }
+        batchOscUpdate(key, state);
       });
-
-      // Aggiorna gli stati solo se ci sono nuovi dati
-      if (Object.keys(newTimecodes).length > 0) {
-        setTimecodes(prev => ({
-          ...prev,
-          ...newTimecodes
-        }));
-      }
-
-      if (Object.keys(newMediaLengths).length > 0) {
-        setMediaLengths(prev => ({
-          ...prev,
-          ...newMediaLengths
-        }));
-      }
     });
 
 
     return () => {
       addLog('Cleanup del socket client: disconnessione dal backend.');
+      
+      // MIGLIORAMENTO 1: Cleanup throttle timer
+      if (oscThrottleTimerRef.current) {
+        clearTimeout(oscThrottleTimerRef.current);
+        oscThrottleTimerRef.current = null;
+      }
+      
       newSocket.disconnect();
       setSocket(null);
     };
-  }, [addLog]); // Rimosso configuredServerUrl dalle dipendenze se è costante dopo il primo render
+  }, [addLog, processBatchedOscUpdates]); // MIGLIORAMENTO 1: Dipendenza corretta
 
   // Funzione per connettersi a CasparCG
   const connectToCaspar = useCallback(async (newHost, newPort, profileId = null, serverRole = null) => {

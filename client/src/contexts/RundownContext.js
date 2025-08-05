@@ -27,7 +27,10 @@ export const RundownProvider = ({ children }) => {
     templateList, // PROBLEMA 3 FIX: Aggiungi templateList dal CasparContext
     // LOOP AUTOMATICO: Importa dati OSC per rilevamento fine media
     oscConnected,
-    oscData
+    oscData,
+    // MIGLIORAMENTO 2: Aggiungi timecodes e mediaLengths per detection intelligente
+    timecodes,
+    mediaLengths
   } = useCaspar();
 
   const { user } = useAuth();
@@ -1128,6 +1131,12 @@ export const RundownProvider = ({ children }) => {
       loopControlRef.current.timerId = null;
     }
     
+    // MIGLIORAMENTO 2: Cleanup del nuovo sistema smart auto-sequential
+    if (loopControlRef.current.cleanup) {
+      loopControlRef.current.cleanup();
+      loopControlRef.current.cleanup = null;
+    }
+    
     // Imposta flag di controllo interno
     loopControlRef.current = {
       running: true,
@@ -1225,233 +1234,193 @@ export const RundownProvider = ({ children }) => {
               addLog(`⏱️ AUTOPLAY: Attesa ${Math.round(durationMs/1000)}s per "${currentItem.name}"`, 'debug');
             }
             
-            // OSC-BASED MEDIA END DETECTION: Sostituisce setTimeout fisso
-            const startOSCMonitoring = () => {
+            // MIGLIORAMENTO 2 INTEGRATO: Smart Auto-Sequential con detection frame-based
+            const startSmartAutoSequential = () => {
               const channelLayer = `${currentItem.data?.channel || 1}-${currentItem.data?.layer || 10}`;
-              let lastTimecode = null;
-              let stuckCount = 0;
-              const STUCK_THRESHOLD = 2; // Considerato "finito" dopo 2 controlli consecutivi con stesso timecode
-              const CHECK_INTERVAL = 1000; // Controlla ogni 1 secondo (ridotto da 500ms per evitare loop troppo rapidi)
+              let isSequentialActive = true;
+              let oscPollingInterval = null;
+              let fallbackTimer = null;
+              const POLLING_INTERVAL = 500; // Polling ogni 500ms per bilanciare precisione e performance
               
-              // DEBUG CRITICO: Verifica che la funzione sia chiamata
-              if (typeof addLog === 'function') {
-                addLog(`🚀 START_OSC_MONITOR: Chiamata per "${currentItem.name}" - Tipo: ${currentItem.type}`, 'info');
-                addLog(`🔍 OSC_MONITOR_INIT: oscConnected=${oscConnected}, loopRunning=${loopControlRef.current.running}`, 'info');
-              }
-              
-              if (typeof addLog === 'function') {
-                addLog(`🎯 OSC MONITOR: Inizio monitoraggio "${currentItem.name}" su ${channelLayer}`, 'info');
-                addLog(`🔍 MONITOR DEBUG: OSC Connected: ${oscConnected}, OSC Data keys: ${oscData ? Object.keys(oscData).join(',') : 'NULL'}`, 'info');
-              }
-              
-              const monitorOSC = () => {
-                if (!loopControlRef.current.running) {
-                  if (typeof addLog === 'function') addLog('⏹️ OSC MONITOR: Stop monitoraggio (loop fermato)', 'debug');
-                  return;
+              // MIGLIORAMENTO 2: Helper per convertire timecode in frame (assumendo 25fps)
+              const timecodeToFrames = (timecode) => {
+                if (!timecode || timecode === '00:00:00:00') return 0;
+                try {
+                  const parts = timecode.split(':');
+                  if (parts.length !== 4) return 0;
+                  const [hours, minutes, seconds, frames] = parts.map(Number);
+                  const totalSeconds = hours * 3600 + minutes * 60 + seconds;
+                  return totalSeconds * 25 + frames; // Assumiamo 25fps
+                } catch (e) {
+                  return 0;
                 }
+              };
+              
+              // MIGLIORAMENTO 2: Helper per rilevare fine media con detection intelligente
+              const isMediaFinished = (oscChannelData, currentTimecode, mediaLengthData) => {
+                if (!oscChannelData || !oscConnected) return false;
                 
-                // Verifica connessione OSC e disponibilità dati
-                if (!oscConnected || !oscData || !oscData[channelLayer]) {
-                  // Fallback a setTimeout se OSC non disponibile
-                  if (typeof addLog === 'function') {
-                    addLog(`⚠️ OSC MONITOR: OSC non disponibile per ${channelLayer}, fallback a timer fisso (${Math.round(durationMs/1000)}s)`, 'warning');
+                // METODO 1: Frame-based detection (più preciso)
+                if (typeof oscChannelData.frame === 'number' && typeof oscChannelData.length === 'number' && oscChannelData.length > 0) {
+                  const progress = (oscChannelData.frame / oscChannelData.length) * 100;
+                  const isFinished = progress >= 95 && !oscChannelData.paused;
+                  if (isFinished && typeof addLog === 'function') {
+                    addLog(`🎬 [MIGLIORAMENTO 2] Media finito (frame): ${progress.toFixed(2)}% (${oscChannelData.frame}/${oscChannelData.length})`, 'info');
                   }
-                  loopControlRef.current.timerId = setTimeout(() => {
-                    loopControlRef.current.currentIndex++;
-                    playNext();
-                  }, durationMs);
+                  return isFinished;
+                }
+                
+                // METODO 2: Timecode-based detection con durata media
+                if (currentTimecode && mediaLengthData?.frames > 0) {
+                  const currentFrames = timecodeToFrames(currentTimecode);
+                  if (currentFrames > 0) {
+                    const progress = (currentFrames / mediaLengthData.frames) * 100;
+                    const isFinished = progress >= 95 && !oscChannelData.paused;
+                    if (isFinished && typeof addLog === 'function') {
+                      addLog(`🎬 [MIGLIORAMENTO 2] Media finito (timecode): ${progress.toFixed(2)}% (${currentFrames}/${mediaLengthData.frames})`, 'info');
+                    }
+                    return isFinished;
+                  }
+                }
+                
+                return false;
+              };
+              
+              // DEBUG CRITICO log iniziale
+              if (typeof addLog === 'function') {
+                addLog(`🚀 [MIGLIORAMENTO 2] START_SMART_SEQUENTIAL: "${currentItem.name}" su ${channelLayer}`, 'info');
+                addLog(`🔍 [MIGLIORAMENTO 2] OSC Connected: ${oscConnected}, OSC Data keys: ${oscData ? Object.keys(oscData).join(',') : 'NULL'}`, 'info');
+              }
+              
+              // MIGLIORAMENTO 2: OSC Monitoring con detection intelligente
+              const startOscMonitoring = () => {
+                if (!isSequentialActive || !loopControlRef.current.running) {
+                  if (typeof addLog === 'function') addLog('⏹️ [MIGLIORAMENTO 2] Stop monitoring (loop fermato)', 'debug');
                   return;
                 }
                 
-                // NUOVO SISTEMA: Frame-based end detection invece di stuck timecode
-                const oscChannelData = oscData[channelLayer];
-                
-                // DEBUG CRITICO: Log struttura completa OSC data
-                if (typeof addLog === 'function') {
-                  addLog(`🔍 DEBUG OSC: ${channelLayer} - Data disponibile: ${JSON.stringify(oscChannelData)}`, 'info');
-                  addLog(`🔍 OSC KEYS: Chiavi disponibili: ${oscChannelData ? Object.keys(oscChannelData).join(', ') : 'NESSUN DATO'}`, 'info');
-                }
-                
-                // SAFE TIMECODE EXTRACTION: Handle both string and object formats
-                let currentTimecode = oscChannelData?.timecode;
-                
-                // CRITICAL FIX: Ensure timecode is a string
-                if (currentTimecode && typeof currentTimecode === 'object') {
-                  // If timecode is an object, try to extract the actual timecode value
-                  currentTimecode = currentTimecode.timecode || currentTimecode.value || String(currentTimecode);
-                }
-                if (currentTimecode && typeof currentTimecode !== 'string') {
-                  currentTimecode = String(currentTimecode);
-                }
-                
-                const currentFrame = oscChannelData?.frame;
-                const totalFrames = oscChannelData?.nb_frames || oscChannelData?.length;
-                const isPaused = oscChannelData?.paused;
-                
-                if (typeof addLog === 'function') {
-                  addLog(`🎬 OSC FRAME: ${channelLayer} - TC:${currentTimecode} Frame:${currentFrame}/${totalFrames} Paused:${isPaused}`, 'debug');
-                }
-                
-                // Verifica se abbiamo dati di frame validi
-                if (currentFrame !== undefined && totalFrames !== undefined && totalFrames > 0) {
-                  // FRAME-BASED DETECTION: Verifica se siamo vicini alla fine del media
-                  const frameProgress = currentFrame / totalFrames;
-                  const isNearEnd = frameProgress >= 0.98; // 98% del media completato
+                oscPollingInterval = setInterval(() => {
+                  if (!isSequentialActive || !loopControlRef.current.running) {
+                    clearInterval(oscPollingInterval);
+                    return;
+                  }
                   
-                  if (isNearEnd || currentFrame >= totalFrames - 2) {
-                    // Media finito - calcola durata effettiva basata su tempo reale
+                  // Verifica connessione OSC e disponibilità dati
+                  if (!oscConnected || !oscData || !oscData[channelLayer]) {
+                    // OSC non disponibile - continua polling
+                    return;
+                  }
+                  
+                  // Ottieni dati OSC real-time
+                  const oscChannelData = oscData[channelLayer];
+                  const currentTimecode = timecodes ? timecodes[channelLayer] : null;
+                  
+                  // Log dettagliato per debug (solo ogni 10 polling per ridurre spam)
+                  if (Math.random() < 0.1 && typeof addLog === 'function') {
+                    addLog(`🎬 [MIGLIORAMENTO 2] OSC-MONITORING ${currentItem.name}: TC=${currentTimecode}, Frame=${oscChannelData?.frame}/${oscChannelData?.length}, Paused=${oscChannelData?.paused}`, 'debug');
+                  }
+                  
+                  // MIGLIORAMENTO 2: Verifica se il media è finito con dati di durata
+                  const mediaKey = channelLayer;
+                  const mediaLengthData = mediaLengths ? mediaLengths[mediaKey] : null;
+                  
+                  if (isMediaFinished(oscChannelData, currentTimecode, mediaLengthData)) {
+                    // MIGLIORAMENTO 2: Calcola e aggiorna durata effettiva del media
                     const actualDuration = calculateActualDuration(currentItem, currentTimecode);
                     updateItemDuration(currentItem.id, actualDuration);
                     
                     if (typeof addLog === 'function') {
-                      addLog(`✅ FRAME END: "${currentItem.name}" completato (${currentFrame}/${totalFrames}) - TC:${currentTimecode} - Durata: ${actualDuration}`, 'info');
-                    }
-                    loopControlRef.current.currentIndex++;
-                    playNext();
-                    return;
-                  }
-                  
-                  // Media in riproduzione normale
-                  if (typeof addLog === 'function' && Math.random() < 0.1) { // Log solo 10% delle volte per ridurre spam
-                    addLog(`▶️ FRAME PROGRESS: "${currentItem.name}" - ${Math.round(frameProgress * 100)}% (${currentFrame}/${totalFrames})`, 'debug');
-                  }
-                  
-                } else if (currentTimecode && !totalFrames) {
-                  // FALLBACK AVANZATO: Timecode-based detection intelligente
-                  if (typeof addLog === 'function') {
-                    addLog(`🔍 TC ANALYSIS: ${currentTimecode} (Last: ${lastTimecode})`, 'debug');
-                  }
-                  
-                  // Rilevamento avanzato: reset del timecode (media che ricomincia)
-                  if (lastTimecode && currentTimecode) {
-                    try {
-                      // SAFE TIMECODE PARSING: Prevent crashes with invalid formats
-                      const parseTimecodeToSeconds = (timecode) => {
-                        if (!timecode || typeof timecode !== 'string') return 0;
-                        const parts = timecode.split(':');
-                        if (parts.length < 3) return 0;
-                        
-                        const hours = parseInt(parts[0]) || 0;
-                        const minutes = parseInt(parts[1]) || 0;
-                        const seconds = parseInt(parts[2]) || 0;
-                        
-                        return hours * 3600 + minutes * 60 + seconds;
-                      };
-                      
-                      const currentSeconds = parseTimecodeToSeconds(currentTimecode);
-                      const lastSeconds = parseTimecodeToSeconds(lastTimecode);
-                    
-                      // RILEVAMENTO RESET: Se il timecode torna a 0 o diminuisce significativamente
-                      if (currentSeconds < lastSeconds - 1 || (lastSeconds > 2 && currentSeconds < 1)) {
-                        const actualDuration = calculateActualDuration(currentItem, lastTimecode);
-                        updateItemDuration(currentItem.id, actualDuration);
-                        
-                        if (typeof addLog === 'function') {
-                          addLog(`✅ TC RESET: "${currentItem.name}" fine rilevata (reset ${lastSeconds}s → ${currentSeconds}s) - Durata: ${actualDuration}`, 'info');
-                        }
-                        loopControlRef.current.currentIndex++;
-                        playNext();
-                        return;
-                      }
-                      
-                    } catch (timecodeError) {
-                      if (typeof addLog === 'function') {
-                        addLog(`⚠️ TIMECODE PARSE ERROR: ${timecodeError.message} - TC: ${currentTimecode}`, 'warning');
-                      }
-                      // Continue with stuck detection as fallback
-                    }
-                  }
-                  
-                  // RILEVAMENTO STUCK AVANZATO: Gestisce entrambi i casi
-                  if (currentTimecode === lastTimecode) {
-                    stuckCount++;
-                    if (typeof addLog === 'function') {
-                      addLog(`🔍 TC STUCK: ${currentTimecode} stuck ${stuckCount}/${STUCK_THRESHOLD} volte`, 'debug');
+                      addLog(`🎬 [MIGLIORAMENTO 2] AUTO-SEQUENTIAL: Fine media rilevata per ${currentItem.name}, durata: ${actualDuration}, avvio prossimo`, 'info');
                     }
                     
-                    // ENHANCED DETECTION: Controlla se il timecode è bloccato su un valore di fine
-                    let isAtEndValue = false;
-                    try {
-                      if (currentTimecode && typeof currentTimecode === 'string') {
-                        isAtEndValue = (
-                          currentTimecode.includes('05:01') || // Common end pattern from logs
-                          currentTimecode.includes('05:00') || 
-                          currentTimecode.includes('04:24') ||
-                          currentTimecode.includes('04:23')
-                        );
-                        
-                        // Also check if frames part indicates end
-                        const parts = currentTimecode.split(':');
-                        if (parts.length >= 3) {
-                          const frames = parseFloat(parts[2]) || 0;
-                          if (frames > 23) isAtEndValue = true; // PAL/NTSC frame overflow
-                        }
-                      }
-                    } catch (e) {
-                      // Safe fallback
-                      isAtEndValue = false;
-                    }
+                    // Ferma il monitoring
+                    isSequentialActive = false;
+                    clearInterval(oscPollingInterval);
+                    if (fallbackTimer) clearTimeout(fallbackTimer);
                     
-                    if (stuckCount >= STUCK_THRESHOLD || (isAtEndValue && stuckCount >= 1)) {
-                      const actualDuration = calculateActualDuration(currentItem, currentTimecode);
-                      updateItemDuration(currentItem.id, actualDuration);
-                      
-                      if (typeof addLog === 'function') {
-                        addLog(`✅ TC END: "${currentItem.name}" fine rilevata (stuck ${stuckCount}x) - TC:${currentTimecode} - Durata: ${actualDuration}`, 'info');
-                      }
-                      loopControlRef.current.currentIndex++;
-                      playNext();
-                      return;
-                    }
-                  } else {
-                    // Reset stuck counter when timecode progresses
-                    if (stuckCount > 0 && typeof addLog === 'function') {
-                      addLog(`▶️ TC PROGRESS: ${lastTimecode} → ${currentTimecode} (reset stuck counter)`, 'debug');
-                    }
-                    stuckCount = 0;
-                    lastTimecode = currentTimecode;
-                  }
-                  
-                } else if (currentItem.type === 'TEMPLATE') {
-                  // Template handling - uso timer fisso
-                  const templateDuration = Math.min(durationMs, 3000);
-                  if (typeof addLog === 'function') {
-                    addLog(`🎨 TEMPLATE: "${currentItem.name}" - timer fisso ${templateDuration}ms`, 'debug');
-                  }
-                  loopControlRef.current.timerId = setTimeout(() => {
+                    // Avvia il prossimo elemento
                     loopControlRef.current.currentIndex++;
                     playNext();
-                  }, templateDuration);
-                  return;
-                  
-                } else {
-                  // Nessun dato OSC utile - fallback a timer
-                  if (typeof addLog === 'function') {
-                    addLog(`⚠️ OSC FALLBACK: Nessun dato frame/timecode per ${channelLayer}, uso timer ${Math.round(durationMs/1000)}s`, 'warning');
                   }
-                  loopControlRef.current.timerId = setTimeout(() => {
-                    loopControlRef.current.currentIndex++;
-                    playNext();
-                  }, durationMs);
-                  return;
-                }
-                
-                // Continua monitoraggio
-                loopControlRef.current.timerId = setTimeout(monitorOSC, CHECK_INTERVAL);
+                }, POLLING_INTERVAL);
               };
               
-              // Inizia monitoraggio dopo breve delay per permettere al media di iniziare
-              if (typeof addLog === 'function') {
-                addLog(`⏱️ OSC_TIMEOUT: Impostazione timeout 1000ms per "${currentItem.name}"`, 'info');
-              }
-              loopControlRef.current.timerId = setTimeout(monitorOSC, 1000);
+              // MIGLIORAMENTO 2: Fallback timer intelligente con durata media reale
+              const setupFallbackTimer = () => {
+                let fallbackDurationMs = 5000; // Default 5 secondi
+                
+                // METODO 1: Usa durata da mediaLengths OSC (più preciso)
+                const mediaKey = channelLayer;
+                const mediaLengthData = mediaLengths ? mediaLengths[mediaKey] : null;
+                
+                if (mediaLengthData?.frames > 0) {
+                  // Converti frames in millisecondi (assumendo 25fps)
+                  fallbackDurationMs = Math.round((mediaLengthData.frames / 25) * 1000);
+                  if (typeof addLog === 'function') {
+                    addLog(`🎯 [MIGLIORAMENTO 2] FALLBACK con durata OSC: ${Math.round(fallbackDurationMs/1000)}s (${mediaLengthData.frames} frames)`, 'info');
+                  }
+                } else if (currentItem.duration && currentItem.duration > 0) {
+                  // METODO 2: Usa durata configurata nell'item
+                  fallbackDurationMs = currentItem.duration * 1000;
+                  if (typeof addLog === 'function') {
+                    addLog(`🎯 [MIGLIORAMENTO 2] FALLBACK con durata item: ${currentItem.duration}s`, 'info');
+                  }
+                } else {
+                  // METODO 3: Fallback ai 5 secondi originali
+                  if (typeof addLog === 'function') {
+                    addLog(`🎯 [MIGLIORAMENTO 2] FALLBACK timer default: 5s`, 'info');
+                  }
+                }
+                
+                // Template handling - uso timer fisso ridotto
+                if (currentItem.type === 'TEMPLATE') {
+                  fallbackDurationMs = Math.min(fallbackDurationMs, 3000);
+                  if (typeof addLog === 'function') {
+                    addLog(`🎨 [MIGLIORAMENTO 2] TEMPLATE: "${currentItem.name}" - timer fisso ${fallbackDurationMs}ms`, 'info');
+                  }
+                }
+                
+                // Imposta fallback timer
+                fallbackTimer = setTimeout(() => {
+                  if (!isSequentialActive) return;
+                  
+                  isSequentialActive = false;
+                  if (oscPollingInterval) clearInterval(oscPollingInterval);
+                  
+                  // MIGLIORAMENTO 2: Calcola durata effettiva anche per fallback
+                  const fallbackTimecode = timecodes ? timecodes[channelLayer] : null;
+                  const actualDuration = calculateActualDuration(currentItem, fallbackTimecode);
+                  updateItemDuration(currentItem.id, actualDuration);
+                  
+                  if (typeof addLog === 'function') {
+                    addLog(`⏰ [MIGLIORAMENTO 2] FALLBACK TRIGGER: "${currentItem.name}" dopo ${Math.round(fallbackDurationMs/1000)}s, durata: ${actualDuration}`, 'info');
+                  }
+                  
+                  loopControlRef.current.currentIndex++;
+                  playNext();
+                }, fallbackDurationMs);
+              };
+              
+              // Avvia monitoring OSC e fallback timer
+              startOscMonitoring();
+              setupFallbackTimer();
+              
+              // Cleanup function quando il loop si ferma
+              const cleanup = () => {
+                isSequentialActive = false;
+                if (oscPollingInterval) clearInterval(oscPollingInterval);
+                if (fallbackTimer) clearTimeout(fallbackTimer);
+              };
+              
+              // Salva la funzione di cleanup per poterla chiamare quando necessario
+              loopControlRef.current.cleanup = cleanup;
             };
             
-            // DEBUG CRITICO: Verifica che startOSCMonitoring sia chiamato
+            // DEBUG CRITICO: Verifica che startSmartAutoSequential sia chiamato
             if (typeof addLog === 'function') {
-              addLog(`🔧 CALLING startOSCMonitoring per "${currentItem.name}"`, 'info');
+              addLog(`🔧 [MIGLIORAMENTO 2] CALLING startSmartAutoSequential per "${currentItem.name}"`, 'info');
             }
-            startOSCMonitoring();
+            startSmartAutoSequential();
             
           })
           .catch((error) => {
@@ -1491,6 +1460,13 @@ export const RundownProvider = ({ children }) => {
       clearTimeout(loopControlRef.current.timerId);
       loopControlRef.current.timerId = null;
     }
+    
+    // MIGLIORAMENTO 2: Cleanup del nuovo sistema smart auto-sequential
+    if (loopControlRef.current.cleanup) {
+      loopControlRef.current.cleanup();
+      loopControlRef.current.cleanup = null;
+    }
+    
     loopControlRef.current.running = false;
     
     // Ferma tutti gli elementi in riproduzione
