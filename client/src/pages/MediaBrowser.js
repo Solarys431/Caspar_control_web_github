@@ -178,6 +178,11 @@ const MediaBrowser = () => {
 
   // Filtra la lista dei media quando cambia la ricerca o la cartella selezionata
   useEffect(() => {
+    if (!mediaList || !Array.isArray(mediaList)) {
+      setFilteredMediaList([]);
+      return;
+    }
+    
     let filtered = mediaList;
 
     // Filtra per cartella se è media legacy (stringa) o per source se è nuovo formato (oggetto)
@@ -210,6 +215,11 @@ const MediaBrowser = () => {
 
   // Estrae le cartelle/sources dalla lista dei media
   useEffect(() => {
+    if (!mediaList || !Array.isArray(mediaList)) {
+      setFolders([]);
+      return;
+    }
+
     const folderSet = new Set();
 
     mediaList.forEach(item => {

@@ -57,26 +57,44 @@ const MediaSelector = ({ onSelectMedia }) => {
     loadMediaList();
   }, [loadMediaList]);
 
-  // Filtra i media in base al termine di ricerca e al tipo
+  // 🔥 FILTRA MEDIA ESCLUDENDO TEMPLATE
   useEffect(() => {
-    if (!mediaList) {
+    if (!mediaList || !Array.isArray(mediaList)) {
       setFilteredMedia([]);
       return;
     }
 
     let filtered = [...mediaList];
 
+    // 🔥 FILTRA MEDIA: Escludi solo HTML e JSON, accetta tutto il resto
+    filtered = filtered.filter(media => {
+      const mediaName = typeof media === 'string' ? media : (media?.name || media?.path || '');
+      const ext = mediaName.split('.').pop()?.toLowerCase() || '';
+      
+      // Escludi esplicitamente solo template e manifest
+      const excludeExtensions = ['html', 'json'];
+      const shouldExclude = excludeExtensions.includes(ext);
+      
+      if (shouldExclude) {
+        console.log(`🚫 File escluso: ${mediaName} (ext: ${ext})`);
+      }
+      
+      return !shouldExclude;
+    });
+
     // Filtra per termine di ricerca
     if (searchTerm) {
-      filtered = filtered.filter(media =>
-        media.toLowerCase().includes(searchTerm.toLowerCase())
-      );
+      filtered = filtered.filter(media => {
+        const mediaName = typeof media === 'string' ? media : (media?.name || media?.path || '');
+        return mediaName.toLowerCase().includes(searchTerm.toLowerCase());
+      });
     }
 
     // Filtra per tipo di file
     if (filterType !== 'all') {
       filtered = filtered.filter(media => {
-        const ext = media.split('.').pop().toLowerCase();
+        const mediaName = typeof media === 'string' ? media : (media?.name || media?.path || '');
+        const ext = mediaName.split('.').pop()?.toLowerCase() || '';
         switch (filterType) {
           case 'video':
             return ['mp4', 'mov', 'avi', 'wmv', 'mxf'].includes(ext);
@@ -91,6 +109,13 @@ const MediaSelector = ({ onSelectMedia }) => {
     }
 
     setFilteredMedia(filtered);
+    console.log(`🎬 Media filtrati (senza template): ${filtered.length} files`);
+    console.log(`🔍 MEDIA DEBUG - mediaList totali: ${mediaList?.length || 0}`);
+    if (Array.isArray(mediaList) && mediaList.length > 0) {
+      const casparMedia = mediaList.filter(m => !m.isLocal).length;
+      const localMedia = mediaList.filter(m => m.isLocal).length;
+      console.log(`   CasparCG: ${casparMedia}, Locali: ${localMedia}`);
+    }
   }, [mediaList, searchTerm, filterType]);
 
   // Gestisce la selezione di un media

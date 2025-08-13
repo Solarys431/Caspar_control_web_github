@@ -42,48 +42,93 @@ const getTemplateType = (templateName) => {
 
 // Componente per la selezione dei template
 const TemplateSelector = ({ onSelectTemplate }) => {
-  const { connected, templateList, getTemplateList } = useCaspar();
+  const { connected, templateList, getTemplateList, getAllMedia, mediaList } = useCaspar();
 
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredTemplates, setFilteredTemplates] = useState([]);
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [filterType, setFilterType] = useState('all');
+  
+  // 🔥 STATO COMBINATO: Template locali + remoti
+  const [combinedTemplates, setCombinedTemplates] = useState([]);
 
-  // Carica la lista dei template
+  // Carica la lista dei template (remoti + locali)
   const loadTemplateList = useCallback(async () => {
-    if (!connected) return;
-
     setLoading(true);
     try {
-      await getTemplateList();
+      // 1. Carica template remoti CasparCG (se connesso)
+      if (connected) {
+        await getTemplateList();
+      }
+      
+      // 2. 🔥 CARICA TEMPLATE LOCALI tramite getAllMedia
+      await getAllMedia();
     } catch (error) {
       console.error('Errore nel caricamento della lista dei template:', error);
     } finally {
       setLoading(false);
     }
-  }, [connected, getTemplateList]);
+  }, [connected, getTemplateList, getAllMedia]);
 
-  // Carica la lista dei template all'avvio e quando cambia lo stato di connessione
+  // 🔥 COMBINA template remoti e locali
   useEffect(() => {
-    if (connected) {
-      loadTemplateList();
+    const remoteTemplates = templateList || [];
+    
+    // 🔥 FILTRA template HTML dall'array mediaList unificato
+    const localTemplates = Array.isArray(mediaList) 
+      ? mediaList
+          .filter(media => {
+            const fileName = typeof media === 'string' ? media : (media?.name || media?.path || '');
+            return fileName.toLowerCase().endsWith('.html');
+          })
+          .map(template => ({
+            ...template,
+            source: 'local',
+            name: typeof template === 'string' ? template : (template?.name || template?.path || template)
+          }))
+      : [];
+    
+    // Combina entrambe le fonti
+    const combined = [
+      ...remoteTemplates.map(template => ({
+        ...template,
+        source: 'remote',
+        name: typeof template === 'string' ? template : (template?.name || template?.path || template)
+      })),
+      ...localTemplates
+    ];
+    
+    setCombinedTemplates(combined);
+    console.log(`🔥 Template combinati: ${remoteTemplates.length} remoti + ${localTemplates.length} locali = ${combined.length} totali`);
+    console.log(`🔍 TEMPLATE DEBUG - mediaList totali: ${mediaList?.length || 0}`);
+    if (Array.isArray(mediaList)) {
+      const htmlFiles = mediaList.filter(m => {
+        const name = typeof m === 'string' ? m : (m?.name || m?.path || '');
+        return name.toLowerCase().endsWith('.html');
+      }).length;
+      console.log(`   Template HTML trovati in mediaList: ${htmlFiles}`);
     }
-  }, [connected, loadTemplateList]);
+  }, [templateList, mediaList]);
 
-  // Filtra i template in base al termine di ricerca e al tipo
+  // Carica la lista dei template all'avvio
   useEffect(() => {
-    if (!templateList) {
+    loadTemplateList();
+  }, [loadTemplateList]);
+
+  // Filtra i template combinati in base al termine di ricerca e al tipo
+  useEffect(() => {
+    if (!combinedTemplates.length) {
       setFilteredTemplates([]);
       return;
     }
 
-    let filtered = [...templateList];
+    let filtered = [...combinedTemplates];
 
     // Filtra per termine di ricerca
     if (searchTerm) {
       filtered = filtered.filter(template => {
-        const templateName = typeof template === 'string' ? template : (template?.name || template?.path || '');
+        const templateName = template.name || template.path || '';
         return templateName.toLowerCase().includes(searchTerm.toLowerCase());
       });
     }
@@ -91,14 +136,14 @@ const TemplateSelector = ({ onSelectTemplate }) => {
     // Filtra per tipo di template
     if (filterType !== 'all') {
       filtered = filtered.filter(template => {
-        const templateName = typeof template === 'string' ? template : (template?.name || template?.path || '');
+        const templateName = template.name || template.path || '';
         const type = getTemplateType(templateName);
         return type === filterType;
       });
     }
 
     setFilteredTemplates(filtered);
-  }, [templateList, searchTerm, filterType]);
+  }, [combinedTemplates, searchTerm, filterType]);
 
   // Gestisce la selezione di un template
   const handleSelectTemplate = (template) => {

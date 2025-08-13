@@ -75,7 +75,7 @@ const MediaBrowser = ({ onSelectMedia }) => {
 
   // Filtra i media in base al termine di ricerca e al tipo di filtro
   useEffect(() => {
-    if (!mediaList) {
+    if (!mediaList || !Array.isArray(mediaList)) {
       setFilteredMedia([]);
       return;
     }

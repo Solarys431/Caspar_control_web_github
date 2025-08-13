@@ -610,7 +610,9 @@ export const CasparProvider = ({ children }) => {
             });
           }
           
+          // 🔥 AGGIORNA mediaList con l'array completo unificato
           setMediaList(allMedia);
+          
           addLog(`Lista media completa: ${allMedia.length} file totali`);
           resolve({ success: true, media: allMedia });
         } else {
