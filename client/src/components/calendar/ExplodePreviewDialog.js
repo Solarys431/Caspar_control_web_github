@@ -124,7 +124,7 @@ const ExplodePreviewDialog = ({ open, onClose, items = [], onConfirm, scalettaNa
       case 'type':
         return a.type.localeCompare(b.type);
       case 'duration':
-        return (a.data.duration || '00:00:00').localeCompare(b.data.duration || '00:00:00');
+        return (a.data.duration || '').localeCompare(b.data.duration || '');
       default:
         return 0;
     }
@@ -391,7 +391,7 @@ const ExplodePreviewDialog = ({ open, onClose, items = [], onConfirm, scalettaNa
                   </TableCell>
                   <TableCell>{item.name}</TableCell>
                   <TableCell>{item.data.startTime || '00:00:00'}</TableCell>
-                  <TableCell>{item.data.duration || '00:00:00'}</TableCell>
+                  <TableCell>{item.data.duration || '-'}</TableCell>
                   <TableCell>
                     {item.type === 'MEDIA' && item.data.clip && (
                       <Chip size="small" label={item.data.clip.split('/').pop()} />

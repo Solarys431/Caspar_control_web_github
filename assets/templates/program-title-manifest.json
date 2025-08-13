@@ -1,0 +1,51 @@
+{
+  "name": "Program Title",
+  "description": "Animated program title with subtitle and network branding",
+  "category": "Titles",
+  "thumbnail": "program-title-thumb.png",
+  "resolution": "1920x1080",
+  "fps": 25,
+  "fields": [
+    {
+      "id": "f0",
+      "label": "Program Name",
+      "type": "text",
+      "default": "IL GRANDE SHOW",
+      "required": true
+    },
+    {
+      "id": "f1",
+      "label": "Subtitle",
+      "type": "text",
+      "default": "EDIZIONE SPECIALE",
+      "required": false
+    },
+    {
+      "id": "f2",
+      "label": "Time Slot",
+      "type": "text",
+      "default": "21:00",
+      "required": false
+    },
+    {
+      "id": "f3",
+      "label": "Network Logo URL",
+      "type": "text",
+      "default": "",
+      "required": false,
+      "description": "Logo image URL or 'none' to hide"
+    },
+    {
+      "id": "f4",
+      "label": "Theme",
+      "type": "select",
+      "options": ["default", "news", "sports", "entertainment"],
+      "default": "default",
+      "required": false
+    }
+  ],
+  "preview": {
+    "duration": 5000,
+    "loop": false
+  }
+}

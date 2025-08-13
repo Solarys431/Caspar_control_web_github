@@ -344,11 +344,16 @@ const RundownDialogs = ({
                   onChange={(e) => setSelectedMedia(e.target.value)}
                   label="Media"
                 >
-                  {mediaList.map((media) => (
-                    <MenuItem key={media} value={media}>
-                      {media.split('/').pop()}
-                    </MenuItem>
-                  ))}
+                  {mediaList.map((media) => {
+                    const mediaName = typeof media === 'string' ? media : (media?.name || media?.path || 'Media sconosciuto');
+                    const mediaValue = typeof media === 'string' ? media : (media?.name || media?.path || media);
+                    const displayName = typeof media === 'string' ? media.split('/').pop() : (media?.name || 'Media sconosciuto');
+                    return (
+                      <MenuItem key={mediaName} value={mediaValue}>
+                        {displayName}
+                      </MenuItem>
+                    );
+                  })}
                 </Select>
               </FormControl>
             </Grid>
@@ -448,11 +453,16 @@ const RundownDialogs = ({
                   onChange={(e) => setSelectedLinkedTemplate(e.target.value)}
                   label="Template Annidato"
                 >
-                  {templateList.map((template) => (
-                    <MenuItem key={template} value={template}>
-                      {template.split('/').pop()}
-                    </MenuItem>
-                  ))}
+                  {templateList.map((template) => {
+                    const templateName = typeof template === 'string' ? template : (template?.name || template?.path || 'Template sconosciuto');
+                    const templateValue = typeof template === 'string' ? template : (template?.name || template?.path || template);
+                    const displayName = typeof template === 'string' ? template.split('/').pop() : (template?.name || 'Template sconosciuto');
+                    return (
+                      <MenuItem key={templateName} value={templateValue}>
+                        {displayName}
+                      </MenuItem>
+                    );
+                  })}
                 </Select>
               </FormControl>
             </Grid>
@@ -584,11 +594,16 @@ const RundownDialogs = ({
                   onChange={(e) => setSelectedMedia(e.target.value)}
                   label="Media"
                 >
-                  {mediaList.map((media) => (
-                    <MenuItem key={media} value={media}>
-                      {media.split('/').pop()}
-                    </MenuItem>
-                  ))}
+                  {mediaList.map((media) => {
+                    const mediaName = typeof media === 'string' ? media : (media?.name || media?.path || 'Media sconosciuto');
+                    const mediaValue = typeof media === 'string' ? media : (media?.name || media?.path || media);
+                    const displayName = typeof media === 'string' ? media.split('/').pop() : (media?.name || 'Media sconosciuto');
+                    return (
+                      <MenuItem key={mediaName} value={mediaValue}>
+                        {displayName}
+                      </MenuItem>
+                    );
+                  })}
                 </Select>
               </FormControl>
             </Grid>
@@ -669,11 +684,16 @@ const RundownDialogs = ({
                   onChange={(e) => setSelectedTemplate(e.target.value)}
                   label="Template"
                 >
-                  {templateList.map((template) => (
-                    <MenuItem key={template} value={template}>
-                      {template.split('/').pop()}
-                    </MenuItem>
-                  ))}
+                  {templateList.map((template) => {
+                    const templateName = typeof template === 'string' ? template : (template?.name || template?.path || 'Template sconosciuto');
+                    const templateValue = typeof template === 'string' ? template : (template?.name || template?.path || template);
+                    const displayName = typeof template === 'string' ? template.split('/').pop() : (template?.name || 'Template sconosciuto');
+                    return (
+                      <MenuItem key={templateName} value={templateValue}>
+                        {displayName}
+                      </MenuItem>
+                    );
+                  })}
                 </Select>
               </FormControl>
             </Grid>

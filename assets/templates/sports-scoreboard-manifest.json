@@ -1,0 +1,69 @@
+{
+  "name": "Sports Scoreboard",
+  "description": "Live sports scoreboard with team scores and match time",
+  "category": "Sports",
+  "thumbnail": "sports-scoreboard-thumb.png",
+  "resolution": "1920x1080",
+  "fps": 25,
+  "fields": [
+    {
+      "id": "f0",
+      "label": "Competition",
+      "type": "text",
+      "default": "SERIE A",
+      "required": true
+    },
+    {
+      "id": "f1",
+      "label": "Home Team",
+      "type": "text",
+      "default": "MILAN",
+      "required": true
+    },
+    {
+      "id": "f2",
+      "label": "Home Score",
+      "type": "number",
+      "default": "0",
+      "min": 0,
+      "max": 999,
+      "required": true
+    },
+    {
+      "id": "f3",
+      "label": "Away Team",
+      "type": "text",
+      "default": "INTER",
+      "required": true
+    },
+    {
+      "id": "f4",
+      "label": "Away Score",
+      "type": "number",
+      "default": "0",
+      "min": 0,
+      "max": 999,
+      "required": true
+    },
+    {
+      "id": "f5",
+      "label": "Match Time",
+      "type": "text",
+      "default": "00:00",
+      "required": false
+    },
+    {
+      "id": "f6",
+      "label": "Sport Type",
+      "type": "select",
+      "options": ["default", "football", "basketball", "tennis"],
+      "default": "football",
+      "required": false
+    }
+  ],
+  "preview": {
+    "duration": 0,
+    "loop": false,
+    "persistent": true
+  }
+}

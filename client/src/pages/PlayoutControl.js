@@ -184,7 +184,7 @@ const PlayoutControl = () => {
   const {
     connected,
     mediaList,
-    getMediaList,
+    getAllMedia, // 🔥 USANDO getAllMedia invece di getMediaList per avere assets + CasparCG
     play,
     stop,
     loadbg,
@@ -201,10 +201,9 @@ const PlayoutControl = () => {
 
   // Carica la lista dei media quando la pagina viene caricata
   useEffect(() => {
-    if (connected) {
-      getMediaList();
-    }
-  }, [connected, getMediaList]);
+    // 🔥 RIMOSSA dipendenza da connected - getAllMedia funziona anche per assets locali
+    getAllMedia();
+  }, [getAllMedia]);
 
   // Riproduzione di un clip
   const handlePlay = async (channel, layer, clip, options) => {
@@ -370,13 +369,18 @@ const PlayoutControl = () => {
 
         <Grid container spacing={1}>
           {mediaList.length > 0 ? (
-            mediaList.map((media, index) => (
+            mediaList.map((media, index) => {
+              // 🔥 SUPPORTA DUAL FORMAT: legacy string + nuovo object
+              const displayName = typeof media === 'string' ? media : (media?.name || media?.path || 'Unknown file');
+              const mediaPath = typeof media === 'string' ? media : (media?.httpUrl || media?.path || media?.name || 'Unknown');
+              
+              return (
               <Grid item key={index}>
                 <Chip
-                  label={media}
+                  label={displayName}
                   onClick={() => {
                     // Copia negli appunti
-                    navigator.clipboard.writeText(media);
+                    navigator.clipboard.writeText(mediaPath);
                   }}
                   sx={{
                     maxWidth: 200,
@@ -388,7 +392,8 @@ const PlayoutControl = () => {
                   }}
                 />
               </Grid>
-            ))
+              );
+            })
           ) : (
             <Grid item xs={12}>
               <Typography variant="body1" color="text.secondary">

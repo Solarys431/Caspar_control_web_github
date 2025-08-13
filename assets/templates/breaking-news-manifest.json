@@ -1,0 +1,36 @@
+{
+  "name": "Breaking News Alert",
+  "description": "Urgent breaking news alert with animated banner",
+  "category": "News",
+  "thumbnail": "breaking-news-thumb.png",
+  "resolution": "1920x1080",
+  "fps": 25,
+  "fields": [
+    {
+      "id": "f0",
+      "label": "News Text",
+      "type": "text",
+      "default": "ULTIMA ORA: IMPORTANTE NOTIZIA IN ARRIVO",
+      "required": true
+    },
+    {
+      "id": "f1",
+      "label": "Urgency Level",
+      "type": "select",
+      "options": ["normal", "urgent"],
+      "default": "normal",
+      "required": false
+    },
+    {
+      "id": "f2",
+      "label": "Show Live Indicator",
+      "type": "checkbox",
+      "default": "true",
+      "required": false
+    }
+  ],
+  "preview": {
+    "duration": 10000,
+    "loop": false
+  }
+}

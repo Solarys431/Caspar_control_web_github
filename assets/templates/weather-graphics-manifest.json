@@ -1,0 +1,56 @@
+{
+  "name": "Weather Graphics",
+  "description": "Animated weather display with temperature and conditions",
+  "category": "Weather",
+  "thumbnail": "weather-graphics-thumb.png",
+  "resolution": "1920x1080",
+  "fps": 25,
+  "fields": [
+    {
+      "id": "f0",
+      "label": "Location",
+      "type": "text",
+      "default": "MILANO",
+      "required": true
+    },
+    {
+      "id": "f1",
+      "label": "Temperature (°C)",
+      "type": "number",
+      "default": "24",
+      "min": -50,
+      "max": 50,
+      "required": true
+    },
+    {
+      "id": "f2",
+      "label": "Weather Condition",
+      "type": "select",
+      "options": ["sunny", "partly_cloudy", "cloudy", "rainy", "stormy", "snowy", "foggy"],
+      "default": "sunny",
+      "required": true
+    },
+    {
+      "id": "f3",
+      "label": "Humidity",
+      "type": "number",
+      "default": "65",
+      "min": 0,
+      "max": 100,
+      "required": false
+    },
+    {
+      "id": "f4",
+      "label": "Wind Speed",
+      "type": "number",
+      "default": "12",
+      "min": 0,
+      "max": 200,
+      "required": false
+    }
+  ],
+  "preview": {
+    "duration": 8000,
+    "loop": true
+  }
+}

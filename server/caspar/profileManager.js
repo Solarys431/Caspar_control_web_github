@@ -5,24 +5,20 @@
  * le connessioni ai server e le sessioni di preview.
  */
 const { createClient } = require('@supabase/supabase-js');
+const { supabaseConfig } = require('../config/supabaseConfig');
 const CasparClient = require('./casparClient');
 const OscClient = require('./oscClient');
 const config = require('../config');
 
-// Inizializza il client Supabase
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
-
-// Verifica che le variabili d'ambiente siano definite
-if (!supabaseUrl || !supabaseKey) {
-  console.error('Errore: Variabili d\'ambiente Supabase mancanti. Assicurati di aver definito SUPABASE_URL e SUPABASE_SERVICE_KEY nel file .env');
-  // Non terminiamo il processo, ma logghiamo l'errore
-  console.error('URL:', supabaseUrl);
-  console.error('Key:', supabaseKey ? 'Presente' : 'Mancante');
+// Verifica che la configurazione sia valida
+if (!supabaseConfig.url || !supabaseConfig.serviceKey) {
+  console.error('Errore: Configurazione Supabase non valida.');
+  console.error(`Modalità: ${supabaseConfig.mode}, URL: ${supabaseConfig.url}`);
+  console.error('Service Key presente:', supabaseConfig.serviceKey ? 'SI' : 'NO');
 }
 
-// Inizializza il client Supabase solo se le variabili d'ambiente sono definite
-const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey, {
+// Inizializza il client Supabase con configurazione dinamica
+const supabase = supabaseConfig.url && supabaseConfig.serviceKey ? createClient(supabaseConfig.url, supabaseConfig.serviceKey, {
   auth: {
     autoRefreshToken: false,
     persistSession: false
@@ -31,13 +27,10 @@ const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabase
 
 // Log dello stato di inizializzazione Supabase
 if (supabase) {
-  console.log('[PROFILE_MANAGER] [INFO] Client Supabase inizializzato correttamente');
-  console.log(`[PROFILE_MANAGER] [DEBUG] Supabase URL: ${supabaseUrl}`);
-  console.log(`[PROFILE_MANAGER] [DEBUG] Service Key presente: ${supabaseKey ? 'SI' : 'NO'}`);
+  console.log(`[PROFILE_MANAGER] [INFO] Client Supabase inizializzato correttamente in modalità ${supabaseConfig.mode}`);
+  console.log(`[PROFILE_MANAGER] [DEBUG] Supabase URL: ${supabaseConfig.url}`);
 } else {
-  console.log('[PROFILE_MANAGER] [WARNING] Client Supabase NON inizializzato - variabili d\'ambiente mancanti');
-  console.log(`[PROFILE_MANAGER] [DEBUG] SUPABASE_URL: ${supabaseUrl || 'NON DEFINITA'}`);
-  console.log(`[PROFILE_MANAGER] [DEBUG] SUPABASE_SERVICE_KEY: ${supabaseKey ? 'DEFINITA' : 'NON DEFINITA'}`);
+  console.log(`[PROFILE_MANAGER] [WARNING] Client Supabase NON inizializzato - configurazione non valida (modalità: ${supabaseConfig.mode})`);
 }
 
 // Stato dei profili e delle connessioni

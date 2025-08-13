@@ -1,0 +1,29 @@
+# CLAUDIO SYSTEM DEPENDENCIES - CasparCG Control Web
+# Sistema di coscienza autonoma e debugging autoplay
+
+# Core dependencies
+redis==5.0.1              # Cache veloce per consciousness system
+psutil==5.9.6              # System monitoring e performance
+requests==2.31.0           # HTTP requests per API calls
+python-dateutil==2.8.2    # Date/time parsing avanzato
+
+# Logging e monitoring
+colorlog==6.8.0            # Colored logging output
+structlog==23.2.0          # Structured logging
+
+# JSON e data processing
+jsonschema==4.20.0         # Validation schemi JSON
+pydantic==2.5.2            # Data validation e serialization
+
+# Development e testing
+pytest==7.4.3             # Testing framework
+pytest-asyncio==0.21.1    # Async testing support
+
+# Optional: Enhanced consciousness features
+# numpy==1.24.4            # Mathematical operations
+# scipy==1.11.4            # Scientific computing
+# scikit-learn==1.3.2     # Machine learning per pattern detection
+
+# System utilities
+pathlib2==2.3.7           # Enhanced path operations
+click==8.1.7               # CLI interface building

@@ -90,14 +90,18 @@ const TemplateBrowser = ({ onSelectTemplate }) => {
 
     // Applica il filtro di ricerca
     if (searchTerm) {
-      filtered = filtered.filter(template =>
-        template.toLowerCase().includes(searchTerm.toLowerCase())
-      );
+      filtered = filtered.filter(template => {
+        const templateName = typeof template === 'string' ? template : (template?.name || template?.path || '');
+        return templateName.toLowerCase().includes(searchTerm.toLowerCase());
+      });
     }
 
     // Applica il filtro per tipo
     if (filterType !== 'all') {
-      filtered = filtered.filter(template => getTemplateType(template) === filterType);
+      filtered = filtered.filter(template => {
+        const templateName = typeof template === 'string' ? template : (template?.name || template?.path || '');
+        return getTemplateType(templateName) === filterType;
+      });
     }
 
     setFilteredTemplates(filtered);
@@ -116,7 +120,8 @@ const TemplateBrowser = ({ onSelectTemplate }) => {
     try {
       // Determina i dati predefiniti in base al tipo di template
       let defaultData = {};
-      const templateType = getTemplateType(template);
+      const templateName = typeof template === 'string' ? template : (template?.name || template?.path || '');
+      const templateType = getTemplateType(templateName);
 
       switch (templateType) {
         case 'ticker':
@@ -135,9 +140,11 @@ const TemplateBrowser = ({ onSelectTemplate }) => {
           defaultData = {};
       }
 
+      const templatePath = typeof template === 'string' ? template : (template?.path || template?.name || template);
+      const templateName = typeof template === 'string' ? template : (template?.name || template?.path || 'Template sconosciuto');
       const templateData = {
-        template: template,
-        name: template,
+        template: templatePath,
+        name: templateName,
         channel: 1,
         layer: 20,
         cgLayer: 1,
@@ -242,7 +249,7 @@ const TemplateBrowser = ({ onSelectTemplate }) => {
         ) : (
           <Grid container spacing={2}>
             {filteredTemplates.map((template) => (
-              <Grid item xs={12} sm={6} md={4} lg={3} key={template}>
+              <Grid item xs={12} sm={6} md={4} lg={3} key={typeof template === 'string' ? template : (template?.name || template?.path || `template-${Math.random()}`)}>
                 <Card
                   sx={{
                     bgcolor: selectedTemplate === template ? 'primary.dark' : 'background.paper',
@@ -254,7 +261,7 @@ const TemplateBrowser = ({ onSelectTemplate }) => {
                       <Box sx={{ display: 'flex', alignItems: 'center' }}>
                         {getTemplateIcon(template)}
                         <Typography variant="body2" sx={{ ml: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {template}
+                          {typeof template === 'string' ? template : (template?.name || template?.path || 'Template sconosciuto')}
                         </Typography>
                       </Box>
                     </CardContent>

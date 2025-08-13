@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1920, height=1080">
+    <title>Weather Graphics</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            width: 1920px;
+            height: 1080px;
+            background: transparent;
+            font-family: 'Arial', 'Helvetica', sans-serif;
+            overflow: hidden;
+            position: relative;
+            -webkit-font-smoothing: antialiased;
+        }
+        
+        .weather-widget {
+            position: absolute;
+            bottom: 108px; /* 10% from bottom - safe area */
+            right: 192px; /* 10% from right - safe area */
+            width: 450px;
+            height: 200px;
+            opacity: 0;
+            transform: scale(0.8) translateY(50px);
+        }
+        
+        .weather-container {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, 
+                rgba(41, 128, 185, 0.95) 0%, 
+                rgba(52, 152, 219, 0.95) 100%);
+            border-radius: 20px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .weather-header {
+            background: rgba(0, 0, 0, 0.2);
+            padding: 15px 25px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+        }
+        
+        .location {
+            color: rgb(235, 235, 235);
+            font-size: 24px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+        }
+        
+        .weather-main {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 20px 25px;
+        }
+        
+        .temperature-section {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+        
+        .weather-icon {
+            width: 80px;
+            height: 80px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 60px;
+            filter: drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.5));
+        }
+        
+        .temperature {
+            font-size: 64px;
+            font-weight: 700;
+            color: rgb(235, 235, 235);
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.5);
+            position: relative;
+        }
+        
+        .temperature::after {
+            content: '°C';
+            font-size: 32px;
+            position: absolute;
+            top: 5px;
+            right: -45px;
+        }
+        
+        .weather-details {
+            text-align: right;
+        }
+        
+        .condition {
+            color: rgb(235, 235, 235);
+            font-size: 22px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.5);
+        }
+        
+        .details-row {
+            display: flex;
+            gap: 20px;
+            justify-content: flex-end;
+            color: rgba(235, 235, 235, 0.9);
+            font-size: 16px;
+            margin-top: 5px;
+        }
+        
+        .detail-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        /* Weather icon animations */
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        
+        .weather-icon.sunny {
+            color: #ffeb3b;
+            animation: rotate 20s linear infinite;
+        }
+        
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        
+        .weather-icon.cloudy {
+            color: #eceff1;
+            animation: float 3s ease-in-out infinite;
+        }
+        
+        .weather-icon.rainy {
+            color: #90caf9;
+            animation: float 2s ease-in-out infinite;
+        }
+        
+        .weather-icon.stormy {
+            color: #b0bec5;
+            animation: flash 3s ease-in-out infinite;
+        }
+        
+        @keyframes flash {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+        
+        /* Background weather effect */
+        .weather-effect {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            pointer-events: none;
+            opacity: 0.3;
+        }
+        
+        .weather-effect.rain {
+            background: linear-gradient(transparent, rgba(255, 255, 255, 0.1));
+            animation: rain 0.5s linear infinite;
+        }
+        
+        @keyframes rain {
+            to { transform: translateY(20px); }
+        }
+        
+        /* Animation classes */
+        .animate-in .weather-widget {
+            animation: fadeInScale 0.6s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+        }
+        
+        .animate-out .weather-widget {
+            animation: fadeOutScale 0.5s cubic-bezier(0.55, 0.055, 0.675, 0.19) forwards;
+        }
+        
+        @keyframes fadeInScale {
+            to {
+                transform: scale(1) translateY(0);
+                opacity: 1;
+            }
+        }
+        
+        @keyframes fadeOutScale {
+            to {
+                transform: scale(0.8) translateY(50px);
+                opacity: 0;
+            }
+        }
+        
+        /* Weather condition backgrounds */
+        .weather-container.sunny {
+            background: linear-gradient(135deg, 
+                rgba(255, 193, 7, 0.95) 0%, 
+                rgba(255, 152, 0, 0.95) 100%);
+        }
+        
+        .weather-container.cloudy {
+            background: linear-gradient(135deg, 
+                rgba(96, 125, 139, 0.95) 0%, 
+                rgba(69, 90, 100, 0.95) 100%);
+        }
+        
+        .weather-container.rainy {
+            background: linear-gradient(135deg, 
+                rgba(84, 110, 122, 0.95) 0%, 
+                rgba(55, 71, 79, 0.95) 100%);
+        }
+    </style>
+</head>
+<body>
+    <div class="weather-widget" id="weather-widget">
+        <div class="weather-container" id="weather-container">
+            <div class="weather-effect" id="weather-effect"></div>
+            <div class="weather-header">
+                <div class="location" id="f0">MILANO</div>
+            </div>
+            <div class="weather-main">
+                <div class="temperature-section">
+                    <div class="weather-icon sunny" id="weather-icon">☀️</div>
+                    <div class="temperature" id="f1">24</div>
+                </div>
+                <div class="weather-details">
+                    <div class="condition" id="f2">Soleggiato</div>
+                    <div class="details-row">
+                        <div class="detail-item">
+                            <span>💧</span>
+                            <span id="f3">65%</span>
+                        </div>
+                        <div class="detail-item">
+                            <span>💨</span>
+                            <span id="f4">12 km/h</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script>
+        // CasparCG Template Functions
+        let isPlaying = false;
+        
+        const weatherIcons = {
+            'sunny': '☀️',
+            'partly_cloudy': '⛅',
+            'cloudy': '☁️',
+            'rainy': '🌧️',
+            'stormy': '⛈️',
+            'snowy': '❄️',
+            'foggy': '🌫️'
+        };
+        
+        const weatherConditions = {
+            'sunny': 'Soleggiato',
+            'partly_cloudy': 'Parzialmente Nuvoloso',
+            'cloudy': 'Nuvoloso',
+            'rainy': 'Pioggia',
+            'stormy': 'Temporale',
+            'snowy': 'Neve',
+            'foggy': 'Nebbia'
+        };
+
+        function play() {
+            if (isPlaying) return;
+            isPlaying = true;
+            document.body.classList.add('animate-in');
+            document.body.classList.remove('animate-out');
+            console.log('Weather Graphics: Playing');
+        }
+
+        function stop() {
+            if (!isPlaying) return;
+            isPlaying = false;
+            document.body.classList.remove('animate-in');
+            document.body.classList.add('animate-out');
+            console.log('Weather Graphics: Stopping');
+            
+            setTimeout(() => {
+                document.body.classList.remove('animate-out');
+            }, 600);
+        }
+
+        function update(data) {
+            console.log('Weather Graphics: Updating', data);
+            
+            // Parse string data if needed
+            if (typeof data === 'string') {
+                try {
+                    data = JSON.parse(data);
+                } catch (e) {
+                    console.error('Failed to parse data:', e);
+                    return;
+                }
+            }
+            
+            // Update location
+            if (data.f0 !== undefined) {
+                document.getElementById('f0').textContent = data.f0.toUpperCase();
+            }
+            
+            // Update temperature
+            if (data.f1 !== undefined) {
+                document.getElementById('f1').textContent = data.f1;
+            }
+            
+            // Update condition
+            if (data.f2 !== undefined) {
+                const condition = data.f2.toLowerCase().replace(' ', '_');
+                const conditionText = weatherConditions[condition] || data.f2;
+                document.getElementById('f2').textContent = conditionText;
+                
+                // Update weather icon and background
+                const icon = weatherIcons[condition] || '☀️';
+                const iconElement = document.getElementById('weather-icon');
+                iconElement.textContent = icon;
+                iconElement.className = `weather-icon ${condition}`;
+                
+                // Update container background
+                const container = document.getElementById('weather-container');
+                container.className = `weather-container ${condition}`;
+                
+                // Add weather effect for rain
+                const effect = document.getElementById('weather-effect');
+                if (condition === 'rainy' || condition === 'stormy') {
+                    effect.className = 'weather-effect rain';
+                } else {
+                    effect.className = 'weather-effect';
+                }
+            }
+            
+            // Update humidity
+            if (data.f3 !== undefined) {
+                document.getElementById('f3').textContent = data.f3 + '%';
+            }
+            
+            // Update wind speed
+            if (data.f4 !== undefined) {
+                document.getElementById('f4').textContent = data.f4 + ' km/h';
+            }
+        }
+
+        function next() {
+            console.log('Weather Graphics: Next');
+        }
+
+        // Auto-play on load for testing
+        window.addEventListener('load', () => {
+            console.log('Weather Graphics Template Loaded');
+            // Uncomment for auto-preview
+            // setTimeout(play, 500);
+        });
+
+        // Export for CasparCG
+        window.play = play;
+        window.stop = stop;
+        window.update = update;
+        window.next = next;
+    </script>
+</body>
+</html>

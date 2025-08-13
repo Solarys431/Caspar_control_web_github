@@ -367,9 +367,9 @@ const useScalettaItems = () => {
         sourcePath: mediaData.clip,
         timing: {
           startTime: mediaData.startTime || '00:00:00',
-          duration: mediaData.duration || '00:00:00',
+          duration: mediaData.duration || '', // No default - usa durata reale CLS
           inPoint: mediaData.inPoint || '00:00:00:00',
-          outPoint: mediaData.outPoint || '00:00:00:00'
+          outPoint: mediaData.outPoint || '' // Se non c'è outPoint, campo vuoto
         },
         casparcgConfig: {
           channel: mediaData.channel || 1,
@@ -926,9 +926,9 @@ const useScalettaItems = () => {
         sourcePath: '',
         timing: {
           startTime: '00:00:00',
-          duration: '00:01:00',
+          duration: '', // No default duration
           inPoint: '00:00:00:00',
-          outPoint: '00:01:00:00'
+          outPoint: '' // No default outPoint
         },
         casparcgConfig: {
           channel: 1,

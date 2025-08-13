@@ -30,7 +30,7 @@ import { useCaspar } from '../../contexts/CasparContext';
 
 // Componente per la selezione dei media
 const MediaSelector = ({ onSelectMedia }) => {
-  const { connected, mediaList, getMediaList } = useCaspar();
+  const { connected, mediaList, getAllMedia } = useCaspar(); // 🔥 USANDO getAllMedia per assets + CasparCG
 
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -40,24 +40,22 @@ const MediaSelector = ({ onSelectMedia }) => {
 
   // Carica la lista dei media
   const loadMediaList = useCallback(async () => {
-    if (!connected) return;
-
+    // 🔥 RIMOSSA dipendenza da connected - getAllMedia funziona per assets locali
     setLoading(true);
     try {
-      await getMediaList();
+      await getAllMedia(); // 🔥 USANDO getAllMedia per assets + CasparCG
     } catch (error) {
       console.error('Errore nel caricamento della lista dei media:', error);
     } finally {
       setLoading(false);
     }
-  }, [connected, getMediaList]);
+  }, [getAllMedia]);
 
-  // Carica la lista dei media all'avvio e quando cambia lo stato di connessione
+  // Carica la lista dei media all'avvio
   useEffect(() => {
-    if (connected) {
-      loadMediaList();
-    }
-  }, [connected, loadMediaList]);
+    // 🔥 RIMUOVI dipendenza da connected - getAllMedia funziona sempre per assets locali
+    loadMediaList();
+  }, [loadMediaList]);
 
   // Filtra i media in base al termine di ricerca e al tipo
   useEffect(() => {
@@ -104,7 +102,19 @@ const MediaSelector = ({ onSelectMedia }) => {
   };
 
   // Restituisce l'icona appropriata per il tipo di file
-  const getFileIcon = (filename) => {
+  const getFileIcon = (media) => {
+    // 🔥 SUPPORTA DUAL FORMAT: legacy string + nuovo object
+    let filename = '';
+    if (typeof media === 'string') {
+      filename = media;
+    } else if (media && media.name) {
+      filename = media.name;
+    } else if (media && media.path) {
+      filename = media.path;
+    } else {
+      return <FileIcon fontSize="small" />;
+    }
+
     const ext = filename.split('.').pop().toLowerCase();
 
     if (['mp4', 'mov', 'avi', 'wmv', 'mxf'].includes(ext)) {
@@ -202,8 +212,13 @@ const MediaSelector = ({ onSelectMedia }) => {
           </Box>
         ) : (
           <Grid container spacing={2}>
-            {filteredMedia.map((media) => (
-              <Grid item xs={12} sm={6} md={4} lg={3} key={media}>
+            {filteredMedia.map((media, index) => {
+              // 🔥 SUPPORTA DUAL FORMAT: legacy string + nuovo object
+              const displayName = typeof media === 'string' ? media : (media?.name || media?.path || 'Unknown file');
+              const mediaKey = typeof media === 'string' ? media : `${media?.path || media?.name || 'unknown'}-${index}`;
+              
+              return (
+              <Grid item xs={12} sm={6} md={4} lg={3} key={mediaKey}>
                 <Card
                   sx={{
                     bgcolor: selectedMedia === media ? 'primary.dark' : 'background.paper',
@@ -215,7 +230,7 @@ const MediaSelector = ({ onSelectMedia }) => {
                       <Box sx={{ display: 'flex', alignItems: 'center' }}>
                         {getFileIcon(media)}
                         <Typography variant="body2" sx={{ ml: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {media}
+                          {displayName}
                         </Typography>
                       </Box>
                     </CardContent>
@@ -229,7 +244,8 @@ const MediaSelector = ({ onSelectMedia }) => {
                   </Box>
                 </Card>
               </Grid>
-            ))}
+              );
+            })}
           </Grid>
         )}
       </Box>

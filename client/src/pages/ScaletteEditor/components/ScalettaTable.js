@@ -104,7 +104,7 @@ const ScalettaTableRow = React.memo(({
         <TableCell sx={tableStyles.tableCell}>{item.data?.timing?.startTime || '00:00:00'}</TableCell>
       )}
       {visibleColumns.includes('duration') && (
-        <TableCell sx={tableStyles.tableCell}>{item.data?.timing?.duration || '00:00:00'}</TableCell>
+        <TableCell sx={tableStyles.tableCell}>{item.data?.timing?.duration || '-'}</TableCell>
       )}
       {visibleColumns.includes('location') && (
         <TableCell sx={tableStyles.tableCell}>
@@ -221,7 +221,7 @@ const ScalettaTableRow = React.memo(({
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
               <ItemTypeIcon type="TEMPLATE" size="small" variant="icon" showLabel={false} />
               <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>
-                {item.data?.template || 'N/A'}
+                {item.data?.template || item.data?.templateDetails?.templateFile?.split('/').pop() || 'N/A'}
               </Typography>
             </Box>
           ) : item.type === 'STORY' ? (

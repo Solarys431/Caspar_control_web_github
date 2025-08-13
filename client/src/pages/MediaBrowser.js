@@ -111,7 +111,7 @@ const MediaBrowser = () => {
   const {
     connected,
     mediaList,
-    getMediaList,
+    getAllMedia, // 🔥 USANDO getAllMedia invece di getMediaList per avere assets + CasparCG
     getTemplateList,
     // templateList non viene utilizzato, ma lo manteniamo commentato per uso futuro
     // templateList,
@@ -155,9 +155,9 @@ const MediaBrowser = () => {
 
   // Aggiorna la lista dei media
   const handleRefreshMedia = useCallback(async () => {
-    if (!connected) return;
-    await getMediaList();
-  }, [connected, getMediaList]);
+    // 🔥 RIMOSSA condizione (!connected) - getAllMedia funziona anche senza CasparCG per assets locali
+    await getAllMedia(); // 🔥 USANDO getAllMedia per scansione completa assets + CasparCG
+  }, [getAllMedia]);
 
   // Aggiorna la lista dei template
   const handleRefreshTemplates = useCallback(async () => {
@@ -172,40 +172,62 @@ const MediaBrowser = () => {
 
   // Carica la lista dei media quando la pagina viene caricata
   useEffect(() => {
-    if (connected) {
-      handleRefreshMedia();
-    }
-  }, [connected, handleRefreshMedia]);
+    // 🔥 RIMUOVA dipendenza da 'connected' - getAllMedia funziona sempre per assets locali
+    handleRefreshMedia();
+  }, [handleRefreshMedia]);
 
   // Filtra la lista dei media quando cambia la ricerca o la cartella selezionata
   useEffect(() => {
     let filtered = mediaList;
 
-    // Filtra per cartella
+    // Filtra per cartella se è media legacy (stringa) o per source se è nuovo formato (oggetto)
     if (selectedFolder) {
-      filtered = filtered.filter(file => file.startsWith(selectedFolder));
+      filtered = filtered.filter(item => {
+        if (typeof item === 'string') {
+          return item.startsWith(selectedFolder);
+        }
+        // Nuovo formato oggetto con source/category
+        return item.source === selectedFolder || item.category === selectedFolder;
+      });
     }
 
     // Filtra per termine di ricerca
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(file =>
-        file.toLowerCase().includes(term)
-      );
+      filtered = filtered.filter(item => {
+        if (typeof item === 'string') {
+          return item.toLowerCase().includes(term);
+        }
+        // Nuovo formato oggetto - cerca in name, path e type
+        return (item.name?.toLowerCase().includes(term)) ||
+               (item.path?.toLowerCase().includes(term)) ||
+               (item.type?.toLowerCase().includes(term));
+      });
     }
 
     setFilteredMediaList(filtered);
   }, [mediaList, searchTerm, selectedFolder]);
 
-  // Estrae le cartelle dalla lista dei media
+  // Estrae le cartelle/sources dalla lista dei media
   useEffect(() => {
     const folderSet = new Set();
 
-    mediaList.forEach(file => {
-      const parts = file.split('/');
-      if (parts.length > 1) {
-        const folder = parts.slice(0, -1).join('/');
-        folderSet.add(folder);
+    mediaList.forEach(item => {
+      if (typeof item === 'string') {
+        // Legacy format - estrai cartelle dal path
+        const parts = item.split('/');
+        if (parts.length > 1) {
+          const folder = parts.slice(0, -1).join('/');
+          folderSet.add(folder);
+        }
+      } else {
+        // Nuovo formato oggetto - usa source e category
+        if (item.source) {
+          folderSet.add(item.source);
+        }
+        if (item.category && item.source === 'assets') {
+          folderSet.add(`assets/${item.category}`);
+        }
       }
     });
 
@@ -441,13 +463,21 @@ const MediaBrowser = () => {
                   </Box>
                 ) : filteredMediaList.length > 0 ? (
                   <Grid container spacing={2} sx={{ p: 2 }}>
-                    {filteredMediaList.map((file) => {
-                      const fileName = file.split('/').pop();
+                    {filteredMediaList.map((item, index) => {
+                      // 🔥 SUPPORTO DUAL FORMAT: legacy string + nuovo object
+                      const isLegacy = typeof item === 'string';
+                      const fileName = isLegacy ? item.split('/').pop() : item.name;
+                      const filePath = isLegacy ? item : item.path;
                       const fileType = getFileType(fileName);
-                      const isPlaying = currentPlayingFile === file;
+                      const isPlaying = currentPlayingFile === filePath;
+                      
+                      // Nuovo formato: mostra source badge
+                      const source = isLegacy ? 'caspar' : item.source;
+                      const category = isLegacy ? 'unknown' : item.category || item.type;
+                      const httpUrl = isLegacy ? null : item.httpUrl;
 
                       return (
-                        <Grid item xs={12} sm={6} md={4} key={file}>
+                        <Grid item xs={12} sm={6} md={4} key={filePath || `item-${index}`}>
                           <Card
                             sx={{
                               backgroundColor: '#3d3d3d',
@@ -463,8 +493,26 @@ const MediaBrowser = () => {
                               </Box>
 
                               <Typography variant="body2" color="text.secondary" noWrap>
-                                {file}
+                                {filePath}
                               </Typography>
+                              
+                              {/* 🔥 NUOVO: Source badge */}
+                              <Box sx={{ mt: 1, display: 'flex', gap: 0.5 }}>
+                                <Chip
+                                  label={source === 'assets' ? 'HTTP Assets' : 'CasparCG'}
+                                  size="small"
+                                  color={source === 'assets' ? 'success' : 'info'}
+                                  variant="outlined"
+                                />
+                                {httpUrl && (
+                                  <Chip
+                                    label="🌐 HTTP"
+                                    size="small"
+                                    color="secondary"
+                                    variant="filled"
+                                  />
+                                )}
+                              </Box>
                             </CardContent>
 
                             <Box sx={{ px: 2, pb: 1 }}>
@@ -485,7 +533,8 @@ const MediaBrowser = () => {
                                 size="small"
                                 startIcon={<PlayArrowIcon />}
                                 onClick={() => {
-                                  setSelectedFile(file);
+                                  // 🔥 Usa httpUrl per assets, filePath per legacy
+                                  setSelectedFile(httpUrl || filePath);
                                   setPlayDialogOpen(true);
                                 }}
                                 disabled={!connected || loading}
@@ -497,7 +546,8 @@ const MediaBrowser = () => {
                                 size="small"
                                 startIcon={<AddIcon />}
                                 onClick={() => {
-                                  setSelectedFile(file);
+                                  // 🔥 Usa httpUrl per assets, filePath per legacy
+                                  setSelectedFile(httpUrl || filePath);
                                   setAddToRundownDialogOpen(true);
                                 }}
                               >
@@ -508,7 +558,7 @@ const MediaBrowser = () => {
 
                               <IconButton
                                 size="small"
-                                onClick={(e) => handleMenuOpen(e, file)}
+                                onClick={(e) => handleMenuOpen(e, httpUrl || filePath)}
                               >
                                 <MoreVertIcon />
                               </IconButton>
@@ -605,7 +655,7 @@ const MediaBrowser = () => {
         <DialogTitle>Riproduci Media</DialogTitle>
         <DialogContent>
           <Typography variant="body1" gutterBottom>
-            File: {selectedFile}
+            File: {typeof selectedFile === 'string' ? selectedFile : selectedFile?.name || selectedFile?.path || 'Unknown file'}
           </Typography>
 
           <Grid container spacing={2} sx={{ mt: 1 }}>
@@ -655,7 +705,7 @@ const MediaBrowser = () => {
         <DialogTitle>Aggiungi al Rundown</DialogTitle>
         <DialogContent>
           <Typography variant="body1" gutterBottom>
-            File: {selectedFile}
+            File: {typeof selectedFile === 'string' ? selectedFile : selectedFile?.name || selectedFile?.path || 'Unknown file'}
           </Typography>
 
           <Grid container spacing={2} sx={{ mt: 1 }}>

@@ -30,7 +30,7 @@ const RundownPage = () => {
     connected,
     mediaList,
     templateList,
-    getMediaList,
+    getAllMedia, // 🔥 USANDO getAllMedia per assets + CasparCG
     getTemplateList
   } = useCaspar();
 
@@ -93,13 +93,14 @@ const RundownPage = () => {
   // Gestione dei dialoghi del rundown (aggiungi/modifica elementi)
   const dialogsState = useRundownDialogs();
 
-  // Effetto per caricare le liste di media e template da CasparCG quando la connessione è attiva
+  // Effetto per caricare le liste di media e template da CasparCG e assets locali
   useEffect(() => {
+    // 🔥 SEMPRE carica assets locali, templates se CasparCG connesso
+    getAllMedia(); // 🔥 USANDO getAllMedia per assets + CasparCG
     if (connected) {
-      getMediaList();
       getTemplateList();
     }
-  }, [connected, getMediaList, getTemplateList]);
+  }, [connected, getAllMedia, getTemplateList]);
 
   // Effetto per forzare la visualizzazione della timeline a 24h all'avvio
   useEffect(() => {

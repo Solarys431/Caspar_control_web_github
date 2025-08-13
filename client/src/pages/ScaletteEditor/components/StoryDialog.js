@@ -61,9 +61,9 @@ const StoryDialog = ({
     includeTemplate: false,
     timing: {
       startTime: '00:00:00',
-      duration: '00:01:00',
+      duration: '', // No default - usa durata del media se presente
       inPoint: '00:00:00:00',
-      outPoint: '00:01:00:00'
+      outPoint: '' // No default outPoint
     },
     casparcgConfig: {
       channel: 1,
@@ -99,6 +99,78 @@ const StoryDialog = ({
   useEffect(() => {
     setLocalSelectedTemplate(selectedTemplate);
   }, [selectedTemplate]);
+
+  // 🎯 AGGIORNA DURATA STORIA quando viene selezionato un media con durata reale
+  useEffect(() => {
+    console.log('🔍 STORY DIALOG - selectedMedia changed:', selectedMedia);
+    
+    if (selectedMedia) {
+      // 🔥 IMPORTANTE: Attiva automaticamente includeMedia quando selezioni un media!
+      setStoryData(prev => ({
+        ...prev,
+        includeMedia: true // ATTIVA AUTOMATICAMENTE!
+      }));
+    }
+    
+    if (selectedMedia && typeof selectedMedia === 'object') {
+      console.log('📋 Media object FULL:', selectedMedia);
+      console.log('📋 Media object structure:', {
+        name: selectedMedia.name,
+        path: selectedMedia.path,
+        duration: selectedMedia.duration,
+        durationMs: selectedMedia.durationMs,
+        frames: selectedMedia.frames,
+        type: typeof selectedMedia.duration,
+        durationValue: selectedMedia.duration
+      });
+      
+      // DEBUG: Verifica se è un NEBULA
+      if (selectedMedia.name && selectedMedia.name.includes('NEBULA')) {
+        console.log(`🚨 NEBULA SELECTED in Story: "${selectedMedia.name}"`);
+        console.log(`🚨 Duration raw value: ${selectedMedia.duration}`);
+        console.log(`🚨 Frames: ${selectedMedia.frames}`);
+      }
+      
+      // Prova diversi campi per la durata
+      let durationMs = null;
+      
+      // Prova prima duration (potrebbe essere già in ms)
+      if (selectedMedia.duration && typeof selectedMedia.duration === 'number') {
+        durationMs = selectedMedia.duration;
+      }
+      // Prova durationMs
+      else if (selectedMedia.durationMs && typeof selectedMedia.durationMs === 'number') {
+        durationMs = selectedMedia.durationMs;
+      }
+      // Prova a convertire dai frames (25fps)
+      else if (selectedMedia.frames && typeof selectedMedia.frames === 'number') {
+        durationMs = Math.round((selectedMedia.frames / 25) * 1000);
+      }
+      
+      if (durationMs && durationMs > 0) {
+        const seconds = Math.floor(durationMs / 1000);
+        const minutes = Math.floor(seconds / 60);
+        const hours = Math.floor(minutes / 60);
+        const remainingMinutes = minutes % 60;
+        const remainingSeconds = seconds % 60;
+        const formattedDuration = `${String(hours).padStart(2, '0')}:${String(remainingMinutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
+        
+        console.log(`✅ STORY INHERITS DURATION from "${selectedMedia.name}": ${formattedDuration} (${durationMs}ms)`);
+        
+        // Aggiorna la durata della storia con la durata del media
+        setStoryData(prev => ({
+          ...prev,
+          timing: {
+            ...prev.timing,
+            duration: formattedDuration,
+            outPoint: `${formattedDuration}:00` // Aggiorna anche outPoint
+          }
+        }));
+      } else {
+        console.warn('⚠️ No valid duration found in media object');
+      }
+    }
+  }, [selectedMedia]);
 
   // Funzione per aggiungere un template
   const handleAddTemplate = useCallback((template) => {
@@ -377,7 +449,7 @@ const StoryDialog = ({
       const storyToAdd = {
         ...storyData,
         mediaDetails: storyData.includeMedia && selectedMedia ? {
-          clipPath: typeof selectedMedia === 'string' ? selectedMedia : selectedMedia.path,
+          clipPath: typeof selectedMedia === 'string' ? selectedMedia : (selectedMedia.path || selectedMedia.name),
           loop: false,
           autoNext: false,
           linkedTemplate: null,
@@ -571,10 +643,32 @@ const StoryDialog = ({
                         Dettagli Media
                       </Typography>
                       <Typography variant="body2">
-                        Path: {typeof selectedMedia === 'string' ? selectedMedia : selectedMedia.path}
+                        Path: {typeof selectedMedia === 'string' ? selectedMedia : (selectedMedia.path || selectedMedia.name || 'N/A')}
                       </Typography>
                       <Typography variant="body2">
-                        Durata: {typeof selectedMedia === 'string' ? '00:00:00' : (selectedMedia.duration || '00:00:00')}
+                        Durata: {(() => {
+                          if (!selectedMedia) return '-';
+                          if (typeof selectedMedia === 'string') return '-';
+                          
+                          // Prova diversi campi per la durata
+                          let durationMs = null;
+                          
+                          if (selectedMedia.duration && typeof selectedMedia.duration === 'number') {
+                            durationMs = selectedMedia.duration;
+                          } else if (selectedMedia.durationMs && typeof selectedMedia.durationMs === 'number') {
+                            durationMs = selectedMedia.durationMs;
+                          } else if (selectedMedia.frames && typeof selectedMedia.frames === 'number') {
+                            durationMs = Math.round((selectedMedia.frames / 25) * 1000);
+                          }
+                          
+                          if (!durationMs || durationMs <= 0) return '-';
+                          
+                          // Converti millisecondi in HH:MM:SS
+                          const seconds = Math.floor(durationMs / 1000);
+                          const minutes = Math.floor(seconds / 60);
+                          const hours = Math.floor(minutes / 60);
+                          return `${String(hours).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+                        })()}
                       </Typography>
                     </Grid>
 

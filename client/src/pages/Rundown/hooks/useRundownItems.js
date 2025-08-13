@@ -346,7 +346,7 @@ const useRundownItems = (externalRundownId = null) => {
         autoNext: mediaData.autoNext || false,
         linkedTemplate: mediaData.linkedTemplate || null,
         startTime: mediaData.startTime || '00:00:00',
-        duration: mediaData.duration || '00:05:00',
+        duration: mediaData.duration || '', // No default - usa durata reale CLS
         location: mediaData.location || mediaData.clip,
         note: mediaData.note || '',
         inPoint: mediaData.inPoint || '00:00:00',
@@ -468,7 +468,7 @@ const useRundownItems = (externalRundownId = null) => {
         data,
         customName: templateData.customName || '',
         startTime: templateData.startTime || '00:00:00',
-        duration: templateData.duration || '00:01:00',
+        duration: templateData.duration || '', // No default per template
         location: templateData.location || templateData.template,
         note: templateData.note || '',
         inPoint: templateData.inPoint || '00:00:00',
@@ -614,7 +614,7 @@ const useRundownItems = (externalRundownId = null) => {
         channel: storyData.channel || 1,
         layer: storyData.layer || 10,
         startTime: storyData.startTime || '00:00:00',
-        duration: storyData.duration || '00:00:10',
+        duration: storyData.duration || '', // No default per story
         location: storyData.location || `CH${storyData.channel || 1}-L${storyData.layer || 10}`,
         notes: storyData.notes || '',
         // Mantieni tutti i dettagli originali della storia
@@ -629,7 +629,7 @@ const useRundownItems = (externalRundownId = null) => {
         // Timing
         timing: {
           startTime: storyData.startTime || '00:00:00',
-          duration: storyData.duration || '00:00:10',
+          duration: storyData.duration || '', // No default per story
           inPoint: '00:00:00:00',
           outPoint: '00:00:00:00'
         },

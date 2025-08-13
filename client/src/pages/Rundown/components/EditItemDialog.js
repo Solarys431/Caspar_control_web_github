@@ -348,7 +348,11 @@ const EditItemDialog = ({
                 <FormControl fullWidth margin="dense" variant="filled">
                   <InputLabel shrink>File Media</InputLabel>
                   <Select value={selectedMediaClip} onChange={(e) => setSelectedMediaClip(e.target.value)} label="File Media">
-                    {mediaList.map((media) => (<MenuItem key={media} value={media}>{media}</MenuItem>))}
+                    {mediaList.map((media) => {
+                      const mediaName = typeof media === 'string' ? media : (media?.name || media?.path || 'Media sconosciuto');
+                      const mediaValue = typeof media === 'string' ? media : (media?.name || media?.path || media);
+                      return <MenuItem key={mediaName} value={mediaValue}>{mediaName}</MenuItem>;
+                    })}
                   </Select>
                 </FormControl>
                 <FormControlLabel control={<Checkbox checked={itemLoop} onChange={(e) => setItemLoop(e.target.checked)} sx={{ color: 'primary.light' }}/>} label="Riproduzione in loop" sx={{ mt: 1 }} />
@@ -362,7 +366,11 @@ const EditItemDialog = ({
                 <FormControl fullWidth margin="dense" variant="filled">
                   <InputLabel shrink>File Template</InputLabel>
                   <Select value={selectedTemplateFile} onChange={(e) => setSelectedTemplateFile(e.target.value)} label="File Template">
-                    {templateList.map((template) => (<MenuItem key={template} value={template}>{template}</MenuItem>))}
+                    {templateList.map((template) => {
+                      const templateName = typeof template === 'string' ? template : (template?.name || template?.path || 'Template sconosciuto');
+                      const templateValue = typeof template === 'string' ? template : (template?.name || template?.path || template);
+                      return <MenuItem key={templateName} value={templateValue}>{templateName}</MenuItem>;
+                    })}
                   </Select>
                 </FormControl>
                 <Box sx={{ mt: 2 }}>
@@ -387,7 +395,11 @@ const EditItemDialog = ({
                             <InputLabel shrink>File Template Annidato</InputLabel>
                             <Select value={linkedTemplateFile} onChange={(e) => setLinkedTemplateFile(e.target.value)} label="File Template Annidato">
                                 <MenuItem value=""><em>Nessuno</em></MenuItem>
-                                {templateList.map((template) => (<MenuItem key={template} value={template}>{template}</MenuItem>))}
+                                {templateList.map((template) => {
+                      const templateName = typeof template === 'string' ? template : (template?.name || template?.path || 'Template sconosciuto');
+                      const templateValue = typeof template === 'string' ? template : (template?.name || template?.path || template);
+                      return <MenuItem key={templateName} value={templateValue}>{templateName}</MenuItem>;
+                    })}
                             </Select>
                         </FormControl>
                     </Grid>

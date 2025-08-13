@@ -1,0 +1,14 @@
+{
+  "sessionStart": [
+    "bash Claudio/claudio_startup_banner.sh"
+  ],
+  "userPromptSubmit": [
+    "python3 -c \"import json; from datetime import datetime; print(f'\\n📝 {datetime.now().strftime(\\\"%H:%M:%S\\\")} - CLAUDIO PROMPT RICEVUTO')\""
+  ],
+  "postToolUse": [
+    "python3 -c \"import sys, json, os; from datetime import datetime; action = sys.argv[1] if len(sys.argv) > 1 else 'unknown'; print(f'\\n🔧 {datetime.now().strftime(\\\"%H:%M:%S\\\")} - CLAUDIO TOOL: {action}')\" \"${TOOL_NAME:-unknown}\""
+  ],
+  "stop": [
+    "python3 -c \"import json, os; from datetime import datetime; os.chdir('/Users/solarys/Documents/Progetti_AI/Caspar_control_web_github'); memory=json.load(open('Claudio/data/claudio_memory.json')); memory['last_session']=datetime.now().isoformat(); json.dump(memory, open('Claudio/data/claudio_memory.json', 'w'), indent=2)\" && echo '💾 CLAUDIO SESSIONE SALVATA'"
+  ]
+}

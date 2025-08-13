@@ -19,6 +19,7 @@ const cors = require('cors');
 const morgan = require('morgan');
 const path = require('path');
 const fs = require('fs'); // Modulo File System di Node.js
+const { getVideoDurationInSeconds } = require('get-video-duration');
 
 // Importa il client CasparCG
 const CasparClient = require('./caspar/casparClient');
@@ -45,9 +46,56 @@ app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
+// 🔥 ASSETS HTTP SERVING - Struttura organizzata per CasparCG (SPX Style)
+app.use('/assets', express.static(path.resolve(__dirname, '../assets')));         // Assets root folder
+
+// 🔥 BACKWARD COMPATIBILITY - Mantieni i vecchi endpoint  
+app.use('/templates', express.static(path.resolve(__dirname, '../templates')));   // Legacy templates
+app.use('/media', express.static(path.resolve(__dirname, '../media')));           // Legacy media
+app.use('/images', express.static(path.resolve(__dirname, '../images')));         // Legacy images
+app.use('/video', express.static(path.resolve(__dirname, '../video')));           // Legacy video
+app.use('/audio', express.static(path.resolve(__dirname, '../audio')));           // Legacy audio
+app.use('/graphics', express.static(path.resolve(__dirname, '../graphics')));     // Legacy graphics
+app.use('/logos', express.static(path.resolve(__dirname, '../client/public')));   // Legacy logos
+
 const PORT = config.server.port || 5000; // Assicurati che config.server.port esista
 let casparClientInstance = null;
 let oscClientInstance = null;
+
+// MIGLIORAMENTO 3: Command Debouncing System
+const commandDebounceMap = new Map(); // Mappa per tracciare comandi recenti
+const DEBOUNCE_WINDOW_MS = 500; // 500ms window per prevenire duplicati
+
+// MIGLIORAMENTO 3: Funzione per generare chiave debounce
+const generateDebounceKey = (command, channel, layer, clip) => {
+    return `${command.toUpperCase()}-${channel}-${layer}-${clip || 'NO_CLIP'}`;
+};
+
+// MIGLIORAMENTO 3: Funzione per verificare se comando è duplicato
+const isDuplicateCommand = (command, channel, layer, clip, socketId) => {
+    const key = generateDebounceKey(command, channel, layer, clip);
+    const now = Date.now();
+    const lastCommand = commandDebounceMap.get(key);
+    
+    if (lastCommand && (now - lastCommand.timestamp) < DEBOUNCE_WINDOW_MS) {
+        serverLog(`🚫 [DEBOUNCE] Comando duplicato bloccato: ${key} da ${socketId} (ultimo: ${now - lastCommand.timestamp}ms fa)`, 'debug');
+        return true;
+    }
+    
+    // Registra il nuovo comando
+    commandDebounceMap.set(key, { timestamp: now, socketId });
+    
+    // Cleanup periodico (rimuovi entries più vecchi di 5 secondi)
+    if (Math.random() < 0.1) { // 10% delle volte
+        for (const [mapKey, value] of commandDebounceMap.entries()) {
+            if (now - value.timestamp > 5000) {
+                commandDebounceMap.delete(mapKey);
+            }
+        }
+    }
+    
+    return false;
+};
 let casparState = {
     connected: false,
     host: config.caspar.host,
@@ -221,7 +269,8 @@ const initOscClient = (host) => {
         updateOscState(data.channel, data.layer, 'timecode', data);
 
         // Emetti eventi solo per canali prioritari o quando il valore cambia
-        if (data.channel === '3' || isMessageChanged(key, 'timecode_emit', data.rawTime)) {
+        // FIX AUTOPLAY: Emetti SEMPRE per canale 1 per garantire detection fine media
+        if (data.channel === '3' || data.channel === '1' || isMessageChanged(key, 'timecode_emit', data.rawTime)) {
             io.emit('osc:timecode', data);
             io.emit(`osc:timecode:${key}`, data);
         }
@@ -233,8 +282,9 @@ const initOscClient = (host) => {
         // Aggiorna lo stato OSC globale sempre
         updateOscState(data.channel, data.layer, 'frame', data);
 
-        // Emetti eventi solo per canali prioritari o quando il valore cambia
-        if (data.channel === '3' || isMessageChanged(key, 'frame', data.frame)) {
+        // Emetti eventi per canali prioritari (1 e 3) o quando il valore cambia
+        // FIX LOOP: Emetti sempre per canale 1 per garantire loop continuo
+        if (data.channel === '1' || data.channel === '3' || isMessageChanged(key, 'frame', data.frame)) {
             io.emit('osc:frame', data);
             io.emit(`osc:frame:${key}`, data);
         }
@@ -282,8 +332,9 @@ const initOscClient = (host) => {
         // Aggiorna lo stato OSC globale sempre
         updateOscState(data.channel, data.layer, 'length', data);
 
-        // Emetti eventi solo quando il valore cambia
-        if (isMessageChanged(key, 'length_emit', data.length)) {
+        // Emetti eventi per canali prioritari o quando il valore cambia
+        // FIX LOOP: Emetti sempre per canale 1 per garantire dati completi
+        if (data.channel === '1' || data.channel === '3' || isMessageChanged(key, 'length_emit', data.length)) {
             io.emit('osc:length', data);
             io.emit(`osc:length:${key}`, data);
         }
@@ -405,21 +456,220 @@ const initOscClient = (host) => {
         });
 };
 
+// 🔥 FUNZIONE TEMPLATE COMMAND PROCESSOR - Gestisce modalità HTTP per CG ADD e PLAY
+const processTemplateCommand = (commandString) => {
+    // 🔥 GESTIONE COMANDI CG ADD per template
+    if (config.templates.mode === 'HTTP' && commandString.includes('CG') && commandString.includes('ADD')) {
+        const cgAddMatch = commandString.match(/CG\s+(\d+-\d+)\s+ADD\s+(\d+)\s+"([^"]+)"/);
+        if (cgAddMatch) {
+            const [, channel, layer, templateName] = cgAddMatch;
+            
+            if (!templateName.startsWith('http')) {
+                // 🔥 DISTINZIONE INTELLIGENTE: Template locali vs remoti CasparCG
+                // Verifica se il template esiste fisicamente nella cartella locale
+                const fs = require('fs');
+                const path = require('path');
+                const localTemplatePath = path.resolve(__dirname, '../templates', `${templateName}.html`);
+                const assetsTemplatePath = path.resolve(__dirname, '../assets/templates', `${templateName}.html`);
+                
+                const isLocalTemplate = (
+                    fs.existsSync(localTemplatePath) || 
+                    fs.existsSync(assetsTemplatePath)
+                );
+                
+                if (isLocalTemplate) {
+                    // Template locale → Converte in HTTP
+                    const httpUrl = `${config.templates.httpBaseUrl}/${templateName}.html`;
+                    const newCommand = commandString.replace(`"${templateName}"`, `"${httpUrl}"`);
+                    serverLog(`🔥 HTTP Mode: Converted LOCAL template "${templateName}" to "${httpUrl}" (exists locally)`, 'info');
+                    return newCommand;
+                } else {
+                    // Template remoto CasparCG → Lascia inalterato
+                    serverLog(`🎯 CasparCG Mode: Keeping REMOTE template "${templateName}" as original path (not found locally)`, 'info');
+                    return commandString;
+                }
+            }
+        }
+    }
+    
+    // 🔥 GESTIONE COMANDI PLAY per assets
+    if (commandString.includes('PLAY') && commandString.includes('assets/')) {
+        const playMatch = commandString.match(/PLAY\s+(\d+-\d+)\s+"([^"]+)"/);
+        if (playMatch) {
+            const [, channel, assetPath] = playMatch;
+            
+            // Se il path inizia con "assets/" e non è già HTTP, convertilo
+            if (assetPath.startsWith('assets/') && !assetPath.startsWith('http')) {
+                const httpUrl = `${config.assets.httpBaseUrl}/${assetPath.replace('assets/', '')}`;
+                const newCommand = commandString.replace(`"${assetPath}"`, `"${httpUrl}"`);
+                serverLog(`🔥 HTTP Mode: Converted asset "${assetPath}" to "${httpUrl}"`, 'info');
+                return newCommand;
+            }
+        }
+    }
+    
+    return commandString; // Ritorna comando originale se non richiede conversione
+};
+
 const sendCommandToCaspar = async (commandString) => {
-    // ... (implementazione invariata)
     if (!casparClientInstance || !casparState.connected) {
         serverLog(`Invio comando "${commandString}" fallito: non connesso.`, 'warning');
         return { success: false, message: 'Non connesso a CasparCG' };
     }
+    
+    // 🔥 PROCESSA COMANDO PER MODALITÀ TEMPLATE
+    const processedCommand = processTemplateCommand(commandString);
+    
     try {
         // Riduci il livello di log per i comandi CLS e TLS a 'trace' invece di 'debug'
-        const logLevel = (commandString === 'CLS' || commandString === 'TLS') ? 'trace' : 'debug';
-        serverLog(`Invio comando: "${commandString}"`, logLevel);
+        const logLevel = (processedCommand === 'CLS' || processedCommand === 'TLS') ? 'trace' : 'debug';
+        const scanLogLevel = processedCommand === 'SCAN' ? 'info' : logLevel;
+        serverLog(`Invio comando: "${processedCommand}"`, scanLogLevel);
 
-        const response = await casparClientInstance.sendCommand(commandString);
+        // 🎯 IMPORTANTE: Per CLS, restituisci l'array di oggetti parsati con durate!
+        if (processedCommand === 'CLS') {
+            const mediaList = await casparClientInstance.getMediaList();
+            serverLog(`📊 CLS response: ${mediaList.length} media con durate`, 'info');
+            
+            // DEBUG: Log dettagliato per ogni media
+            for (const media of mediaList) {
+                if (media.frames && media.duration) {
+                    serverLog(`📹 "${media.name}": ${media.frames} frames → ${media.duration}ms (${(media.duration/1000).toFixed(1)}s)`, 'debug');
+                }
+            }
+            
+            return { success: true, response: JSON.stringify(mediaList), parsedMedia: mediaList };
+        }
+        
+        // 🔥 NUOVO: Gestione comando SCAN per ottenere TUTTI i media (CasparCG + assets locali)
+        if (processedCommand === 'SCAN') {
+            serverLog('🔥 COMANDO SCAN RICEVUTO - Scansione assets locali + CasparCG', 'info');
+            return new Promise((resolve) => {
+                // Simula una chiamata a media:list tramite evento interno
+                const fakeSocket = {
+                    on: (event, callback) => {}
+                };
+                
+                // Chiama direttamente la logica di media:list
+                const scanMediaList = async () => {
+                    const mediaList = {
+                        caspar: [],
+                        assets: {}
+                    };
+                    
+                    // Scan assets locali
+                    const assetsConfig = config.assets;
+                    serverLog(`🔍 Config assets: ${JSON.stringify(assetsConfig?.paths || {})}`, 'debug');
+                    
+                    if (assetsConfig && assetsConfig.paths) {
+                        for (const [category, dirPath] of Object.entries(assetsConfig.paths)) {
+                            try {
+                                if (!mediaList.assets[category]) {
+                                    mediaList.assets[category] = [];
+                                }
+                                
+                                serverLog(`📁 Checking directory: ${dirPath} for category: ${category}`, 'debug');
+                                
+                                if (fs.existsSync(dirPath)) {
+                                    serverLog(`✅ Directory exists: ${dirPath}`, 'debug');
+                                    // Funzione ricorsiva ASINCRONA per scansionare e calcolare durate
+                                    const scanDirectoryRecursive = async (currentDir, relativePath = '') => {
+                                        const items = fs.readdirSync(currentDir, { withFileTypes: true });
+                                        
+                                        for (const item of items) {
+                                            if (item.name.startsWith('.')) continue;
+                                            
+                                            const fullPath = path.join(currentDir, item.name);
+                                            const currentRelativePath = relativePath ? `${relativePath}/${item.name}` : item.name;
+                                            
+                                            if (item.isFile()) {
+                                                const fileName = item.name;
+                                                const fileExtension = path.extname(fileName).toLowerCase();
+                                                const httpUrl = `${assetsConfig.httpBaseUrl}/${category}/${currentRelativePath}`;
+                                                const fileStats = fs.statSync(fullPath);
+                                                
+                                                const isSupported = category === 'templates' || 
+                                                    Object.values(assetsConfig.supportedFormats || {}).flat().includes(fileExtension);
+                                                
+                                                if (isSupported || category === 'templates') {
+                                                    let duration = 0;
+                                                    let durationFormatted = '';
+                                                    let frames = 0;
+                                                    
+                                                    // Calcola durata per file video/audio
+                                                    if (category === 'video' || category === 'audio') {
+                                                        try {
+                                                            const durationInSeconds = await getVideoDurationInSeconds(fullPath);
+                                                            duration = Math.round(durationInSeconds * 1000);
+                                                            frames = Math.round(durationInSeconds * 25);
+                                                            
+                                                            const hours = Math.floor(durationInSeconds / 3600);
+                                                            const minutes = Math.floor((durationInSeconds % 3600) / 60);
+                                                            const seconds = Math.floor(durationInSeconds % 60);
+                                                            durationFormatted = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+                                                            
+                                                            serverLog(`📊 Durata ${fileName}: ${durationFormatted} (${duration}ms)`, 'debug');
+                                                        } catch (durErr) {
+                                                            serverLog(`⚠️ Impossibile calcolare durata per ${fileName}: ${durErr.message}`, 'debug');
+                                                        }
+                                                    }
+                                                    
+                                                    mediaList.assets[category].push({
+                                                        name: fileName,
+                                                        path: `assets/${category}/${currentRelativePath}`,
+                                                        httpUrl: httpUrl,
+                                                        type: category,
+                                                        extension: fileExtension,
+                                                        size: fileStats.size,
+                                                        duration: duration,
+                                                        durationFormatted: durationFormatted,
+                                                        frames: frames,
+                                                        subfolder: relativePath || null
+                                                    });
+                                                }
+                                            } else if (item.isDirectory()) {
+                                                await scanDirectoryRecursive(fullPath, currentRelativePath);
+                                            }
+                                        }
+                                    };
+                                    
+                                    await scanDirectoryRecursive(dirPath);
+                                    serverLog(`🔥 Assets scan: ${category} = ${mediaList.assets[category].length} files`, 'info');
+                                } else {
+                                    serverLog(`⚠️ Directory NOT found: ${dirPath}`, 'warning');
+                                }
+                            } catch (scanError) {
+                                serverLog(`❌ Errore scan ${category}: ${scanError.message}`, 'error');
+                            }
+                        }
+                    }
+                    
+                    // Scan media CasparCG
+                    try {
+                        if (casparClientInstance && casparClientInstance.connected) {
+                            const casparMediaList = await casparClientInstance.getMediaList();
+                            mediaList.caspar = casparMediaList || [];
+                            serverLog(`🔥 CasparCG media scan: ${mediaList.caspar.length} files`, 'info');
+                        }
+                    } catch (casparError) {
+                        serverLog(`⚠️ Errore scan CasparCG: ${casparError.message}`, 'warning');
+                    }
+                    
+                    return mediaList;
+                };
+                
+                scanMediaList().then(media => {
+                    resolve({ success: true, media });
+                }).catch(err => {
+                    resolve({ success: false, message: err.message });
+                });
+            });
+        }
+
+        const response = await casparClientInstance.sendCommand(processedCommand);
         return { success: true, response };
     } catch (err) {
-        serverLog(`Errore invio comando "${commandString}": ${err.message}`, 'error');
+        serverLog(`Errore invio comando "${processedCommand}": ${err.message}`, 'error');
         return { success: false, message: err.message };
     }
 };
@@ -689,6 +939,18 @@ io.on('connection', (socket) => {
         }
 
         const result = await sendCommandToCaspar(commandString);
+        
+        // DEBUG: Log specifico per CLS
+        if (commandString === 'CLS' && result.parsedMedia) {
+            serverLog(`🔍 SENDING parsedMedia to client: ${result.parsedMedia.length} items`, 'info');
+            // Log primi 3 media come esempio
+            result.parsedMedia.slice(0, 3).forEach(m => {
+                if (m.frames && m.duration) {
+                    serverLog(`  → "${m.name}": ${m.frames}fr = ${m.duration}ms`, 'debug');
+                }
+            });
+        }
+        
         if (typeof callback === 'function') callback(result);
     });
 
@@ -702,6 +964,12 @@ io.on('connection', (socket) => {
             return;
         }
 
+        // MIGLIORAMENTO 3: Check comando duplicato
+        if (isDuplicateCommand(command, channel, layer, clip, socket.id)) {
+            if (typeof callback === 'function') callback({ success: true, response: 'Comando duplicato ignorato', debounced: true });
+            return;
+        }
+
         serverLog(`Comando di controllo "${command}" per ${channel}-${layer} da ${socket.id}`, 'info');
 
         try {
@@ -712,7 +980,13 @@ io.on('connection', (socket) => {
                     if (!clip) {
                         throw new Error('Clip richiesta per il comando PLAY');
                     }
-                    result = await casparClientInstance.play(channel, layer, clip, options || {});
+                    // 🔥 APPLICA AUTO-CONVERSIONE HTTP AI CONTROL COMMANDS
+                    let processedClip = clip;
+                    if (clip.startsWith('assets/') && !clip.startsWith('http')) {
+                        processedClip = `${config.assets.httpBaseUrl}/${clip.replace('assets/', '')}`;
+                        serverLog(`🔥 HTTP Mode: Converted control command asset "${clip}" to "${processedClip}"`, 'info');
+                    }
+                    result = await casparClientInstance.play(channel, layer, processedClip, options || {});
                     break;
                 case 'PAUSE':
                     result = await casparClientInstance.pause(channel, layer);
@@ -730,7 +1004,13 @@ io.on('connection', (socket) => {
                     if (!clip) {
                         throw new Error('Clip richiesta per il comando LOADBG');
                     }
-                    result = await casparClientInstance.loadbg(channel, layer, clip, options || {});
+                    // 🔥 APPLICA AUTO-CONVERSIONE HTTP AI CONTROL COMMANDS
+                    let processedClipLoadbg = clip;
+                    if (clip.startsWith('assets/') && !clip.startsWith('http')) {
+                        processedClipLoadbg = `${config.assets.httpBaseUrl}/${clip.replace('assets/', '')}`;
+                        serverLog(`🔥 HTTP Mode: Converted control command asset "${clip}" to "${processedClipLoadbg}"`, 'info');
+                    }
+                    result = await casparClientInstance.loadbg(channel, layer, processedClipLoadbg, options || {});
                     break;
                 default:
                     throw new Error(`Comando di controllo non supportato: ${command}`);
@@ -787,6 +1067,309 @@ io.on('connection', (socket) => {
             callback({ error: `Errore parsing JSON del manifest: ${parseError.message}` });
           }
         });
+    });
+
+    // 🔥 NUOVO ENDPOINT: Scansione completa media (assets + CasparCG)
+    socket.on('media:scan', async (callback) => {
+        if (typeof callback !== 'function') {
+            serverLog("Callback non fornita per media:scan.", "warning");
+            return;
+        }
+
+        serverLog('🔥 MEDIA:SCAN ricevuto - Scansione completa assets + CasparCG', 'info');
+
+        try {
+            const mediaList = {
+                caspar: [],
+                assets: {}
+            };
+
+            // 🔥 SCAN CARTELLE ASSETS LOCALI
+            const assetsConfig = config.assets;
+            serverLog(`🔍 Config assets: ${JSON.stringify(assetsConfig?.paths || {})}`, 'debug');
+            
+            if (assetsConfig && assetsConfig.paths) {
+                for (const [category, dirPath] of Object.entries(assetsConfig.paths)) {
+                    try {
+                        if (!mediaList.assets[category]) {
+                            mediaList.assets[category] = [];
+                        }
+                        
+                        serverLog(`📁 Checking directory: ${dirPath} for category: ${category}`, 'debug');
+                        
+                        if (fs.existsSync(dirPath)) {
+                            serverLog(`✅ Directory exists: ${dirPath}`, 'debug');
+                            // Funzione ricorsiva ASINCRONA per scansionare e calcolare durate
+                            const scanDirectoryRecursive = async (currentDir, relativePath = '') => {
+                                const items = fs.readdirSync(currentDir, { withFileTypes: true });
+                                
+                                for (const item of items) {
+                                    if (item.name.startsWith('.')) continue;
+                                    
+                                    const fullPath = path.join(currentDir, item.name);
+                                    const currentRelativePath = relativePath ? `${relativePath}/${item.name}` : item.name;
+                                    
+                                    if (item.isFile()) {
+                                        const fileName = item.name;
+                                        const fileExtension = path.extname(fileName).toLowerCase();
+                                        const httpUrl = `${assetsConfig.httpBaseUrl}/${category}/${currentRelativePath}`;
+                                        const fileStats = fs.statSync(fullPath);
+                                        
+                                        const isSupported = category === 'templates' || 
+                                            Object.values(assetsConfig.supportedFormats || {}).flat().includes(fileExtension);
+                                        
+                                        if (isSupported || category === 'templates') {
+                                            let duration = 0;
+                                            let durationFormatted = '';
+                                            let frames = 0;
+                                            
+                                            // Calcola durata per file video/audio
+                                            if (category === 'video' || category === 'audio') {
+                                                try {
+                                                    const durationInSeconds = await getVideoDurationInSeconds(fullPath);
+                                                    duration = Math.round(durationInSeconds * 1000);
+                                                    frames = Math.round(durationInSeconds * 25);
+                                                    
+                                                    const hours = Math.floor(durationInSeconds / 3600);
+                                                    const minutes = Math.floor((durationInSeconds % 3600) / 60);
+                                                    const seconds = Math.floor(durationInSeconds % 60);
+                                                    durationFormatted = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+                                                    
+                                                    serverLog(`📊 Durata ${fileName}: ${durationFormatted} (${duration}ms)`, 'debug');
+                                                } catch (durErr) {
+                                                    serverLog(`⚠️ Impossibile calcolare durata per ${fileName}: ${durErr.message}`, 'debug');
+                                                }
+                                            }
+                                            
+                                            mediaList.assets[category].push({
+                                                name: fileName,
+                                                path: `assets/${category}/${currentRelativePath}`,
+                                                httpUrl: httpUrl,
+                                                type: category,
+                                                extension: fileExtension,
+                                                size: fileStats.size,
+                                                duration: duration,
+                                                durationFormatted: durationFormatted,
+                                                frames: frames,
+                                                subfolder: relativePath || null
+                                            });
+                                        }
+                                    } else if (item.isDirectory()) {
+                                        await scanDirectoryRecursive(fullPath, currentRelativePath);
+                                    }
+                                }
+                            };
+                            
+                            await scanDirectoryRecursive(dirPath);
+                            serverLog(`🔥 Assets scan: ${category} = ${mediaList.assets[category].length} files`, 'info');
+                        } else {
+                            serverLog(`⚠️ Directory NOT found: ${dirPath}`, 'warning');
+                        }
+                    } catch (scanError) {
+                        serverLog(`❌ Errore scan ${category}: ${scanError.message}`, 'error');
+                    }
+                }
+            }
+            
+            // 🔥 SCAN MEDIA CASPAR SERVER (CLS) se connesso
+            try {
+                if (casparClientInstance && casparClientInstance.connected) {
+                    const casparMediaList = await casparClientInstance.getMediaList();
+                    mediaList.caspar = casparMediaList || [];
+                    serverLog(`🔥 CasparCG media scan: ${mediaList.caspar.length} files`, 'info');
+                } else {
+                    serverLog(`⚠️ CasparCG non connesso - solo assets locali`, 'info');
+                }
+            } catch (casparError) {
+                serverLog(`⚠️ Errore scan CasparCG: ${casparError.message}`, 'warning');
+            }
+            
+            const totalAssets = Object.values(mediaList.assets).reduce((acc, arr) => acc + arr.length, 0);
+            serverLog(`✅ SCAN COMPLETATO: ${totalAssets} assets locali + ${mediaList.caspar.length} media CasparCG`, 'info');
+            
+            callback({
+                success: true,
+                media: mediaList
+            });
+
+        } catch (error) {
+            serverLog(`❌ Errore devastante nella scansione media: ${error.message}`, 'error');
+            callback({
+                success: false,
+                message: error.message
+            });
+        }
+    });
+
+    // 🎥 VECCHIO ENDPOINT: Lista media disponibili via HTTP
+    socket.on('media:list', async (type, callback) => {
+        if (typeof callback !== 'function') {
+            serverLog("Callback non fornita per media:list.", "warning");
+            return;
+        }
+
+        const mediaType = type || 'all';
+
+        try {
+            const mediaList = {
+                caspar: [],        // Media da CasparCG server (CLS)
+                assets: {}         // Media da cartelle assets locali (inizializzato dinamicamente)
+            };
+
+            // 🔥 SCAN CARTELLE ASSETS LOCALI
+            const assetsConfig = config.assets;
+            if (assetsConfig && assetsConfig.paths) {
+                for (const [category, dirPath] of Object.entries(assetsConfig.paths)) {
+                    try {
+                        // 🔥 Inizializza array per categoria se non esiste
+                        if (!mediaList.assets[category]) {
+                            mediaList.assets[category] = [];
+                        }
+                        
+                        if (fs.existsSync(dirPath)) {
+                            // 🔥 FUNZIONE RICORSIVA ASINCRONA per scansionare sottocartelle e calcolare durate
+                            const scanDirectoryRecursive = async (currentDir, relativePath = '') => {
+                                const items = fs.readdirSync(currentDir, { withFileTypes: true });
+                                
+                                for (const item of items) {
+                                    if (item.name.startsWith('.')) continue; // Skip file nascosti
+                                    
+                                    const fullPath = path.join(currentDir, item.name);
+                                    const currentRelativePath = relativePath ? `${relativePath}/${item.name}` : item.name;
+                                    
+                                    if (item.isFile()) {
+                                        const fileName = item.name;
+                                        const fileExtension = path.extname(fileName).toLowerCase();
+                                        const httpUrl = `${assetsConfig.httpBaseUrl}/${category}/${currentRelativePath}`;
+                                        const fileStats = fs.statSync(fullPath);
+                                        
+                                        // Verifica formato supportato
+                                        const isSupported = category === 'templates' || 
+                                            Object.values(assetsConfig.supportedFormats || {}).flat().includes(fileExtension);
+                                        
+                                        if (isSupported || category === 'templates') {
+                                            let duration = 0;
+                                            let durationFormatted = '';
+                                            let frames = 0;
+                                            
+                                            // 📊 Calcola durata per file video/audio
+                                            if (category === 'video' || category === 'audio') {
+                                                try {
+                                                    const durationInSeconds = await getVideoDurationInSeconds(fullPath);
+                                                    duration = Math.round(durationInSeconds * 1000); // Converti in millisecondi
+                                                    frames = Math.round(durationInSeconds * 25); // Assumendo 25fps
+                                                    
+                                                    // Formatta durata in HH:MM:SS
+                                                    const hours = Math.floor(durationInSeconds / 3600);
+                                                    const minutes = Math.floor((durationInSeconds % 3600) / 60);
+                                                    const seconds = Math.floor(durationInSeconds % 60);
+                                                    durationFormatted = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+                                                    
+                                                    serverLog(`📊 Durata ${fileName}: ${durationFormatted} (${duration}ms, ${frames} frames)`, 'debug');
+                                                } catch (durErr) {
+                                                    serverLog(`⚠️ Impossibile calcolare durata per ${fileName}: ${durErr.message}`, 'debug');
+                                                }
+                                            }
+                                            
+                                            mediaList.assets[category].push({
+                                                name: fileName,
+                                                path: `assets/${category}/${currentRelativePath}`,
+                                                httpUrl: httpUrl,
+                                                type: category,
+                                                extension: fileExtension,
+                                                size: fileStats.size,
+                                                duration: duration, // Durata in millisecondi
+                                                durationFormatted: durationFormatted, // Durata formattata HH:MM:SS
+                                                frames: frames, // Numero di frames (assumendo 25fps)
+                                                subfolder: relativePath || null
+                                            });
+                                        }
+                                    } else if (item.isDirectory()) {
+                                        // Ricorsione nelle sottocartelle
+                                        await scanDirectoryRecursive(fullPath, currentRelativePath);
+                                    }
+                                }
+                            };
+                            
+                            // Avvia scansione ricorsiva (ora asincrona)
+                            await scanDirectoryRecursive(dirPath);
+                            serverLog(`🔥 Assets scan: ${category} = ${mediaList.assets[category].length} files`, 'info');
+                        } else {
+                            serverLog(`⚠️ Assets directory non trovata: ${dirPath}`, 'warning');
+                        }
+                    } catch (scanError) {
+                        serverLog(`❌ Errore scan ${category}: ${scanError.message}`, 'error');
+                    }
+                }
+            }
+
+            // 🔥 SCAN MEDIA E TEMPLATE CASPAR SERVER (CLS + TLS) se connesso
+            let casparTemplateList = [];
+            try {
+                if (casparClientInstance && casparClientInstance.connected) {
+                    // 🔥 SCAN MEDIA (CLS)
+                    const casparMediaList = await casparClientInstance.getMediaList();
+                    mediaList.caspar = casparMediaList || [];
+                    serverLog(`🔥 CasparCG media scan: ${mediaList.caspar.length} files`, 'info');
+                    
+                    // 📊 DEBUG: Log durate estratte dal CLS
+                    if (mediaList.caspar.length > 0 && typeof mediaList.caspar[0] === 'object') {
+                        const sample = mediaList.caspar.slice(0, 3); // Mostra primi 3 per debug
+                        sample.forEach(item => {
+                            if (item.duration) {
+                                serverLog(`📊 CLS DURATION: "${item.name}" = ${item.durationFormatted} (${item.duration}ms)`, 'info');
+                            }
+                        });
+                    }
+                    
+                    // 🔥 SCAN TEMPLATE (TLS) - SEPARATO DAI MEDIA
+                    try {
+                        casparTemplateList = await casparClientInstance.getTemplateList();
+                        serverLog(`🔥 CasparCG template scan: ${casparTemplateList.length} template`, 'info');
+                    } catch (templateError) {
+                        serverLog(`⚠️ Errore scan template CasparCG: ${templateError.message}`, 'warning');
+                        casparTemplateList = [];
+                    }
+                }
+            } catch (casparError) {
+                serverLog(`⚠️ Errore scan CasparCG media: ${casparError.message}`, 'warning');
+            }
+
+            // 🔥 RESPONSE COMPLETA CON TEMPLATE SEPARATI
+            callback({
+                success: true,
+                mediaList: mediaList,
+                templateList: {
+                    caspar: casparTemplateList || [], // 🔥 TEMPLATE REMOTI CASPARCG (TLS)
+                    assets: mediaList.assets.templates || [] // Template locali da assets
+                },
+                baseUrls: {
+                    assets: assetsConfig?.httpBaseUrl || 'http://100.64.211.9:5000/assets',
+                    caspar: 'caspar://server' // URL simbolico per media CasparCG
+                },
+                endpoints: {
+                    templates: `${assetsConfig?.httpBaseUrl || 'http://100.64.211.9:5000/assets'}/templates/`,
+                    images: `${assetsConfig?.httpBaseUrl || 'http://100.64.211.9:5000/assets'}/images/`,
+                    video: `${assetsConfig?.httpBaseUrl || 'http://100.64.211.9:5000/assets'}/video/`,
+                    audio: `${assetsConfig?.httpBaseUrl || 'http://100.64.211.9:5000/assets'}/audio/`,
+                    graphics: `${assetsConfig?.httpBaseUrl || 'http://100.64.211.9:5000/assets'}/graphics/`,
+                    logos: `${assetsConfig?.httpBaseUrl || 'http://100.64.211.9:5000/assets'}/logos/`
+                },
+                supportedFormats: assetsConfig?.supportedFormats || {},
+                totalFiles: {
+                    assets: Object.values(mediaList.assets).reduce((acc, arr) => acc + arr.length, 0),
+                    caspar: mediaList.caspar.length,
+                    templates: {
+                        caspar: casparTemplateList.length,
+                        assets: mediaList.assets.templates ? mediaList.assets.templates.length : 0
+                    }
+                }
+            });
+
+        } catch (error) {
+            serverLog(`❌ Errore devastante nella lista media: ${error.message}`, 'error');
+            callback({ success: false, message: error.message });
+        }
     });
 });
 

@@ -425,8 +425,8 @@ const RundownList = ({
   // RICHIESTA 1: Hook per sincronizzazione stato riproduzione
   const playbackSync = usePlaybackSync();
 
-  // PROBLEMA 3: Hook per OSC data - MIGLIORAMENTO 2: Aggiungi mediaLengths
-  const { getOscData, getTimecode, oscConnected, mediaLengths } = useCaspar();
+  // PROBLEMA 3: Hook per OSC data - MIGLIORAMENTO 2: Aggiungi mediaLengths + SEAMLESS TAKE
+  const { getOscData, getTimecode, oscConnected, mediaLengths, loadbg, play, getAllMedia, mediaList } = useCaspar(); // 🔥 USANDO getAllMedia per assets + CasparCG
 
   // CORREZIONE CRITICA: Funzioni helper per determinare stato elementi
   const isItemLive = (itemId) => playbackSync.isItemLive(itemId);
@@ -649,54 +649,198 @@ const RundownList = ({
     };
   }, [items, playItem, stopItem, playbackSync, showNotification, getOscData, getTimecode, oscConnected, isMediaFinished, mediaLengths, timecodeToFrames]);
 
-  // PROBLEMA 3: Riproduzione di un item con auto-sequential
+  // Helper per verificare se un file esiste nella media list di CasparCG
+  const checkMediaExists = useCallback((mediaName) => {
+    if (!mediaList || mediaList.length === 0) {
+      console.warn(`🔍 [MEDIA CHECK] Media list non disponibile`);
+      return false;
+    }
+    
+    // Controlla se il file esiste esattamente come specificato
+    const exactMatch = mediaList.includes(mediaName);
+    if (exactMatch) {
+      console.log(`✅ [MEDIA CHECK] File trovato: "${mediaName}"`);
+      return true;
+    }
+    
+    // Controlla varianti con estensioni diverse
+    const nameWithoutExt = mediaName.replace(/\.[^/.]+$/, "");
+    const possibleVariants = mediaList.filter(file => 
+      file && typeof file === 'string' && file.toLowerCase().startsWith(nameWithoutExt.toLowerCase())
+    );
+    
+    if (possibleVariants.length > 0) {
+      console.log(`🔍 [MEDIA CHECK] Varianti trovate per "${mediaName}":`, possibleVariants);
+      return possibleVariants[0]; // Restituisce la prima variante trovata
+    }
+    
+    console.warn(`❌ [MEDIA CHECK] File non trovato: "${mediaName}"`);
+    console.log(`📋 [MEDIA CHECK] File disponibili:`, mediaList.slice(0, 10), mediaList.length > 10 ? '...' : '');
+    return false;
+  }, [mediaList]);
+
+  // Helper per assicurarsi che il nome del file sia corretto per CasparCG
+  const getValidMediaName = useCallback((item) => {
+    let mediaName = item.name;
+    
+    // Se il nome non ha estensione e il tipo è MEDIA, prova ad aggiungere un'estensione comune
+    if (item.type === 'MEDIA' && !mediaName.includes('.')) {
+      // Prova le estensioni più comuni per i media
+      const commonExtensions = ['.mp4', '.mov', '.avi', '.wmv', '.mxf'];
+      console.log(`🔍 [MEDIA NAME] Nome senza estensione: "${mediaName}", provando estensioni comuni`);
+      mediaName = mediaName + '.mp4'; // Default to mp4 for now
+      console.log(`🔍 [MEDIA NAME] Nome corretto: "${mediaName}"`);
+    }
+    
+    // Verifica se il file esiste realmente su CasparCG
+    const mediaExists = checkMediaExists(mediaName);
+    if (mediaExists && typeof mediaExists === 'string') {
+      // Se checkMediaExists restituisce una stringa, è il nome corretto del file
+      mediaName = mediaExists;
+      console.log(`🔄 [MEDIA NAME] Usando nome corretto dal server: "${mediaName}"`);
+    }
+    
+    return mediaName;
+  }, [checkMediaExists]);
+
+  // Helper per assicurarsi che la media list sia aggiornata
+  const ensureMediaListUpdated = useCallback(async () => {
+    if (!mediaList || mediaList.length === 0) {
+      console.log(`📋 [MEDIA LIST] Lista media vuota, aggiornando...`);
+      try {
+        await getAllMedia(); // 🔥 USANDO getAllMedia per assets + CasparCG
+        console.log(`✅ [MEDIA LIST] Lista media aggiornata`);
+      } catch (error) {
+        console.warn(`⚠️ [MEDIA LIST] Errore aggiornamento lista media:`, error);
+      }
+    }
+  }, [mediaList, getAllMedia]); // 🔥 DIPENDENZA AGGIORNATA
+
+  // PLAY MANUALE CON SISTEMA "TAKE" BROADCAST
   const handlePlayItem = async (item) => {
     if (!connected) {
         showNotification('Non connesso a CasparCG.', 'warning');
         return;
     }
+    
     try {
-      await playItem(item);
+      // Assicurati che la media list sia aggiornata
+      await ensureMediaListUpdated();
+      
+      const itemChannel = item.data?.casparcgConfig?.channel || 1;
+      const itemLayer = item.data?.casparcgConfig?.layer || 1;
+      const validMediaName = getValidMediaName(item);
+      
+      // SISTEMA "TAKE" SEAMLESS: Usa LOADBG + PLAY per transizioni senza nero
+      const currentLiveItems = playbackSync.getAllPlayingItems();
+      let hasItemToReplace = false;
+      
+      // Identifica se c'è un item da sostituire sullo stesso canale
+      for (const {itemId, playbackInfo} of currentLiveItems) {
+        if (playbackInfo.status === 'LIVE' && playbackInfo.channel === itemChannel) {
+          hasItemToReplace = true;
+          console.log(`🎬 [SEAMLESS TAKE] Item da sostituire: ${itemId.slice(0,8)}... su channel ${itemChannel}`);
+          
+          // Aggiorna stato del precedente a STOPPED (ma fisicamente non lo fermiamo ancora)
+          playbackSync.updatePlaybackStatus(itemId, {
+            status: 'STOPPED', 
+            channel: playbackInfo.channel,
+            layer: playbackInfo.layer,
+            startTime: playbackInfo.startTime,
+            source: 'rundown'
+          });
+          break;
+        }
+      }
+      
+      if (hasItemToReplace) {
+        console.log(`🔍 [SEAMLESS DEBUG] Original name: "${item.name}", Valid name: "${validMediaName}", Channel: ${itemChannel}, Layer: ${itemLayer}`);
+        
+        // SISTEMA INTELLIGENTE: Verifica se il file esiste prima di tentare LOADBG
+        const mediaExists = checkMediaExists(validMediaName);
+        
+        if (mediaExists) {
+          try {
+            // METODO SEAMLESS: LOADBG + PLAY per cut senza nero
+            console.log(`🎬 [SEAMLESS TAKE] File verificato, usando LOADBG + PLAY per transizione seamless`);
+            
+            // 1. Prima carica il nuovo item in background
+            await loadbg(itemChannel, itemLayer, validMediaName);
+            console.log(`💾 [SEAMLESS TAKE] LOADBG completato per ${validMediaName}`);
+            
+            // 2. Poi fa il cut immediato (PLAY senza parametri fa il take)  
+            await play(itemChannel, itemLayer);
+            console.log(`✂️ [SEAMLESS TAKE] CUT eseguito, transizione seamless completata`);
+            
+          } catch (loadbgError) {
+            // FALLBACK: Se LOADBG fallisce nonostante verifiche, usa PLAY diretto
+            console.warn(`⚠️ [SEAMLESS FALLBACK] LOADBG fallito nonostante verifiche per "${validMediaName}": ${loadbgError.message}`);
+            console.log(`🔄 [SEAMLESS FALLBACK] Fallback a PLAY diretto per ${item.name}`);
+            
+            await playItem(item);
+          }
+        } else {
+          // FILE NON TROVATO: Usa direttamente PLAY (causa frame nero ma funziona)
+          console.warn(`⚠️ [SEAMLESS SKIP] File non trovato su CasparCG, usando PLAY diretto`);
+          console.log(`🔄 [SEAMLESS SKIP] PLAY diretto per ${item.name} (causerà frame nero)`);
+          
+          await playItem(item);
+        }
+      } else {
+        // METODO NORMALE: Nessun item da sostituire, PLAY diretto
+        console.log(`🎬 [DIRECT PLAY] Nessun item da sostituire, PLAY diretto`);
+        await playItem(item);
+      }
 
-      // CORREZIONE CRITICA: Usa status LIVE per ambiente rundown
+      // SISTEMA "TAKE": Imposta SOLO il nuovo item come LIVE
       playbackSync.updatePlaybackStatus(item.id, {
-        status: 'LIVE', // CORREZIONE: Cambiato da 'PLAYING' a 'LIVE'
-        channel: item.data?.casparcgConfig?.channel || 1,
-        layer: item.data?.casparcgConfig?.layer || 1,
+        status: 'LIVE',
+        channel: itemChannel,
+        layer: itemLayer,
         startTime: Date.now(),
         source: 'rundown'
       });
+      
+      console.log(`🎬 [TAKE SYSTEM] Nuovo item ON-AIR: ${item.name} su channel ${itemChannel}-${itemLayer}`);
+      showNotification(`ON-AIR: ${item.data.customName || item.name}`, 'success');
 
-      // PROBLEMA 3: DISABILITATO - Auto-sequential ora gestito direttamente dal RundownContext
-      // setupManualAutoSequential(item); // DISABILITATO per evitare conflitti con MIGLIORAMENTO 2
-
-      showNotification(`Riproduzione avviata: ${item.data.customName || item.name}`, 'success');
+      // SISTEMA "TAKE": Auto-sequential disabilitato per PLAY manuali (gestito solo dal RundownContext per loop automatici)
+      // setupManualAutoSequential(item); // DISABILITATO per evitare conflitti
+      
     } catch (error) {
-      showNotification(`Errore nella riproduzione: ${error.message}`, 'error');
+      console.error(`❌ [TAKE SYSTEM] Errore durante take: ${error.message}`);
+      showNotification(`Errore TAKE: ${error.message}`, 'error');
     }
   };
 
-  // Arresto di un item
+  // STOP MANUALE CON SISTEMA "TAKE"
   const handleStopItem = async (item) => {
     if (!connected) {
         showNotification('Non connesso a CasparCG.', 'warning');
         return;
     }
+    
     try {
+      const itemChannel = item.data?.casparcgConfig?.channel || 1;
+      const itemLayer = item.data?.casparcgConfig?.layer || 1;
+      
       await stopItem(item);
 
-      // RICHIESTA 1: Sincronizza stato di arresto
+      // SISTEMA "TAKE": Rimuovi stato ON-AIR quando fermato manualmente
       playbackSync.updatePlaybackStatus(item.id, {
         status: 'STOPPED',
-        channel: item.data?.casparcgConfig?.channel || 1,
-        layer: item.data?.casparcgConfig?.layer || 1,
+        channel: itemChannel,
+        layer: itemLayer,
         startTime: null,
         source: 'rundown'
       });
-
-      showNotification(`Riproduzione fermata: ${item.data.customName || item.name}`, 'success');
+      
+      console.log(`⏹️ [TAKE SYSTEM] Item fermato manualmente: ${item.name} su channel ${itemChannel}-${itemLayer}`);
+      showNotification(`STOPPED: ${item.data.customName || item.name}`, 'info');
+      
     } catch (error) {
-      showNotification(`Errore nell'arresto: ${error.message}`, 'error');
+      console.error(`❌ [TAKE SYSTEM] Errore durante stop: ${error.message}`);
+      showNotification(`Errore STOP: ${error.message}`, 'error');
     }
   };
 
@@ -799,6 +943,17 @@ const RundownList = ({
   const renderColumnContent = (columnId, item, index, itemProps) => {
     const { isPlaying, isLive, isPreview, isOnAir, isNext, isExploded, isMediaWithLinkedTemplate, isComplexStory, hasMedia, hasTemplates, hasMultipleTemplates } = itemProps;
 
+    // DEBUG LOGGING: Traccia stati per auto-loop diagnostics
+    if (columnId === 'status' && (isOnAir || isNext)) {
+      console.log(`🎬 [ON-AIR DEBUG] Item ${index + 1} "${item.name}":`, {
+        itemState: item.data?.itemState,
+        isLive,
+        isOnAir,
+        isNext,
+        playbackSyncState: isLive ? 'LIVE' : 'NONE'
+      });
+    }
+
     switch (columnId) {
       case 'index':
         return (
@@ -833,7 +988,7 @@ const RundownList = ({
           }}>
             {item.isPlaying && item.playingStartTime 
               ? formatPlayingTime(item.playingStartTime)
-              : (item.data.duration || (item.type === 'MEDIA' ? '00:05:00' : '00:01:00'))
+              : (item.data.duration || '-') // No default duration
             }
           </Box>
         );
@@ -1794,10 +1949,10 @@ const RundownList = ({
             // CORREZIONE CRITICA: Determinare stato corretto usando playbackSync
             const isLive = isItemLive(item.id); // LIVE = in onda su canale 1 (Rundown)
             const isPreview = isItemPreview(item.id); // PREVIEW = in riproduzione su canale 3 (Scalette)
-            // STATI DINAMICI: Usa SOLO il nuovo campo itemState dal context
-            const isOnAir = item.data?.itemState === 'onair';
+            // STATI DINAMICI: Usa itemState come fonte primaria, playbackSync come fallback
+            const isOnAir = item.data?.itemState === 'onair' || isLive; // CORREZIONE: itemState ha priorità per auto-loop
             const isNext = item.data?.itemState === 'next';
-            const isPlaying = item.isPlaying || isLive; // Mantieni compatibilità con logica esistente
+            const isPlaying = isOnAir; // USA sia itemState che playbackSync
 
             // Verifica se l'elemento è esploso (ha sourceInfo)
             const isExploded = item.data && item.data.sourceInfo;
@@ -1859,9 +2014,9 @@ const RundownList = ({
             // MODIFICA/AGGIUNTA END
 
             // Colore di sfondo distintivo per media con template annidato
-            if (isMediaWithLinkedTemplate && !item.isPlaying) {
+            if (isMediaWithLinkedTemplate && !isPlaying) {
                 itemBackgroundColor = 'rgba(100, 100, 0, 0.1)'; // Esempio: giallo scuro trasparente
-            } else if (isMediaWithLinkedTemplate && item.isPlaying) {
+            } else if (isMediaWithLinkedTemplate && isPlaying) {
                 itemBackgroundColor = 'rgba(100, 100, 0, 0.25)'; // Più scuro quando in play
             }
 
@@ -1874,36 +2029,36 @@ const RundownList = ({
                 alignItems: 'center',
                 p: '12px 20px',
                 borderBottom: `1px solid ${broadcastColors.border.primary}`,
-                backgroundColor: item.isPlaying
+                backgroundColor: isPlaying
                   ? `${broadcastColors.status.onAir}20`
                   : isNext
                     ? `${broadcastColors.status.next}20`
                     : itemBackgroundColor,
-                borderLeft: item.isPlaying
+                borderLeft: isPlaying
                   ? `4px solid ${broadcastColors.status.onAir}`
                   : isNext
                     ? `4px solid ${broadcastColors.status.next}`
                     : (isMediaWithLinkedTemplate ? `4px solid ${broadcastColors.status.warning}` :
                        isComplexStory ? `4px solid ${broadcastColors.status.warning}` : 'none'),
-                pl: item.isPlaying || isNext || isMediaWithLinkedTemplate || isComplexStory ? 1 : 2,
+                pl: isPlaying || isNext || isMediaWithLinkedTemplate || isComplexStory ? 1 : 2,
                 position: 'relative',
                 transition: `all ${broadcastAnimations.duration.normal} ${broadcastAnimations.easing.standard}`,
-                boxShadow: item.isPlaying ? `0 0 12px ${broadcastColors.status.onAir}40` : 'none',
+                boxShadow: isPlaying ? `0 0 12px ${broadcastColors.status.onAir}40` : 'none',
                 cursor: 'pointer',
                 fontFamily: broadcastColors.text?.fontFamily || 'inherit',
                 '&:hover': {
-                  backgroundColor: item.isPlaying
+                  backgroundColor: isPlaying
                     ? `${broadcastColors.status.onAir}30`
                     : isNext
                       ? `${broadcastColors.status.next}30`
                       : broadcastColors.background.elevated,
                   transform: 'translateY(-1px)',
-                  boxShadow: item.isPlaying
+                  boxShadow: isPlaying
                     ? `0 0 16px ${broadcastColors.status.onAir}60`
                     : '0 2px 8px rgba(0, 0, 0, 0.4)'
                 },
                 // RICHIESTA 2: Animazione per elementi ON AIR
-                ...(item.isPlaying && {
+                ...(isPlaying && {
                   '@keyframes onAirGlow': {
                     '0%': { boxShadow: `0 0 8px ${broadcastColors.status.onAir}40` },
                     '50%': { boxShadow: `0 0 20px ${broadcastColors.status.onAir}80` },

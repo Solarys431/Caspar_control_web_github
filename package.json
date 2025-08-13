@@ -11,7 +11,10 @@
     "client": "cd client && npm start",
     "install-all": "npm install && cd server && npm install && cd ../client && npm install",
     "build": "cd client && npm run build",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "supabase:cloud": "node scripts/switch-supabase-mode.js cloud",
+    "supabase:local": "node scripts/switch-supabase-mode.js local",
+    "supabase:status": "node scripts/switch-supabase-mode.js"
   },
   "keywords": [
     "casparcg",

@@ -49,7 +49,9 @@ const GraphicsEditor = () => {
   const {
     connected,
     templateList,
+    mediaList, // 🔥 AGGIUNTO per ottenere template locali da getAllMedia
     getTemplateList,
+    getAllMedia, // 🔥 AGGIUNTO per template locali + CasparCG media
     cgAdd,
     // cgPlay, // Potrebbe non essere necessario se cgAdd gestisce playOnLoad
     cgStop,
@@ -64,6 +66,7 @@ const GraphicsEditor = () => {
 
   const [searchTerm, setSearchTerm] = useState('');
   const [filteredTemplateList, setFilteredTemplateList] = useState([]);
+  const [combinedTemplateList, setCombinedTemplateList] = useState([]); // 🔥 Template locali + CasparCG
   const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [selectedTemplateManifest, setSelectedTemplateManifest] = useState(null);
   const [templateData, setTemplateData] = useState({});
@@ -81,26 +84,64 @@ const GraphicsEditor = () => {
   const [manifestLoading, setManifestLoading] = useState(false);
 
   const handleRefreshTemplates = useCallback(async () => {
-    if (!connected) return;
-    await getTemplateList();
-  }, [connected, getTemplateList]);
-
-  useEffect(() => {
+    // 🔥 CARICA SEMPRE assets locali, template remoti se connesso
+    await getAllMedia();
     if (connected) {
-      handleRefreshTemplates();
+      await getTemplateList();
     }
-  }, [connected, handleRefreshTemplates]);
+  }, [connected, getAllMedia, getTemplateList]);
 
   useEffect(() => {
-    let filtered = templateList;
+    // 🔥 CARICA SEMPRE template (locali sempre, remoti se connesso)
+    handleRefreshTemplates();
+  }, [handleRefreshTemplates]);
+
+  // 🔥 COMBINA template locali e remoti
+  useEffect(() => {
+    const combined = [];
+    
+    // 🔥 Aggiungi template remoti CasparCG
+    if (templateList && templateList.length > 0) {
+      templateList.forEach(template => {
+        combined.push({
+          name: template,
+          path: template, 
+          source: 'casparcg',
+          type: 'template'
+        });
+      });
+    }
+    
+    // 🔥 Aggiungi template locali da assets (filtrando solo template .html)
+    if (mediaList && mediaList.length > 0) {
+      mediaList.forEach(item => {
+        // Se è un oggetto con categoria templates
+        if (typeof item === 'object' && item.category === 'templates' && item.name && item.name.endsWith('.html')) {
+          combined.push({
+            name: item.name.replace('.html', ''), // Rimuovi .html per consistenza
+            path: item.httpUrl || item.path,
+            source: 'assets',
+            type: 'template',
+            isLocal: true
+          });
+        }
+      });
+    }
+    
+    setCombinedTemplateList(combined);
+  }, [templateList, mediaList]);
+
+  useEffect(() => {
+    let filtered = combinedTemplateList; // 🔥 USA template combinati (locali + remoti)
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       filtered = filtered.filter(template =>
-        template.toLowerCase().includes(term)
+        (template.name || '').toLowerCase().includes(term) ||
+        (template.path || '').toLowerCase().includes(term)
       );
     }
     setFilteredTemplateList(filtered);
-  }, [templateList, searchTerm]);
+  }, [combinedTemplateList, searchTerm]); // 🔥 DIPENDENZA AGGIORNATA
 
   const handleSelectTemplate = async (templateBaseName) => {
     setSelectedTemplate(templateBaseName);
@@ -295,22 +336,39 @@ const GraphicsEditor = () => {
                   <Box sx={{ display: 'flex', justifyContent: 'center', p: 5 }}><CircularProgress /></Box>
                 ) : filteredTemplateList.length > 0 ? (
                   <List dense>
-                    {filteredTemplateList.map((templateName) => {
+                    {filteredTemplateList.map((template) => {
+                      // 🔥 GESTIONE OGGETTI TEMPLATE invece di stringhe
+                      const templateName = template.name || template.path || template;
+                      const templatePath = template.path || template;
+                      const isLocal = template.source === 'assets';
                       const lastSlash = templateName.lastIndexOf('/');
                       const displayName = lastSlash === -1 ? templateName : templateName.substring(lastSlash + 1);
-                      const folderPath = lastSlash === -1 ? './' : templateName.substring(0, lastSlash);
-
+                      const folderPath = lastSlash === -1 ? (isLocal ? 'Assets' : './') : templateName.substring(0, lastSlash);
+                      
                       return (
                         <ListItem
-                            key={templateName}
+                            key={templatePath}
                             button
-                            onClick={() => handleSelectTemplate(templateName)}
-                            selected={selectedTemplate === templateName}
-                            disabled={manifestLoading && selectedTemplate === templateName}
+                            onClick={() => handleSelectTemplate(templatePath)} // 🔥 USA path per compatibilità
+                            selected={selectedTemplate === templatePath}
+                            disabled={manifestLoading && selectedTemplate === templatePath}
                         >
                           <ListItemIcon><BrushIcon fontSize="small" /></ListItemIcon>
-                          <ListItemText primary={displayName} secondary={folderPath} />
-                           {selectedTemplate === templateName && manifestLoading && <CircularProgress size={20} sx={{ml:1}}/>}
+                          <ListItemText 
+                            primary={
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                {displayName}
+                                <Chip 
+                                  label={isLocal ? 'Local' : 'CasparCG'} 
+                                  size="small" 
+                                  color={isLocal ? 'success' : 'info'}
+                                  variant="outlined"
+                                />
+                              </Box>
+                            } 
+                            secondary={folderPath} 
+                          />
+                           {selectedTemplate === templatePath && manifestLoading && <CircularProgress size={20} sx={{ml:1}}/>}
                         </ListItem>
                       );
                     })}

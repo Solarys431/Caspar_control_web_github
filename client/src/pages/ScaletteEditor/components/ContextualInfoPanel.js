@@ -158,7 +158,7 @@ const ContextualInfoPanel = ({
                 </Grid>
                 <Grid item xs={12}>
                   <Typography variant="caption" color="text.secondary">Template:</Typography>
-                  <Typography variant="body2" noWrap>{selectedItem.data?.template || 'N/A'}</Typography>
+                  <Typography variant="body2" noWrap>{selectedItem.data?.template || selectedItem.data?.templateDetails?.templateFile?.split('/').pop() || 'N/A'}</Typography>
                 </Grid>
                 <Grid item xs={4}>
                   <Typography variant="caption" color="text.secondary">Canale:</Typography>

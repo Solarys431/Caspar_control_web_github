@@ -157,7 +157,7 @@ const TemplateEditor = ({ template, open, onClose, onSave }) => {
       <DialogTitle>
         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography variant="h6">
-            Modifica Template: {template}
+            Modifica Template: {typeof template === 'string' ? template : (template?.name || template?.path || 'Template sconosciuto')}
           </Typography>
           <IconButton onClick={onClose}>
             <CloseIcon />

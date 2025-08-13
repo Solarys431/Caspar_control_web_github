@@ -35,34 +35,13 @@ import {
 } from '@mui/icons-material';
 import { useCaspar } from '../../contexts/CasparContext';
 import { useRundown } from '../../contexts/RundownContext';
+import { getMediaDisplayName, getMediaValue, getMediaKey, getFileType } from '../../utils/mediaUtils';
 
-// Funzione per determinare il tipo di file in base all'estensione
-const getFileType = (filename) => {
-  if (!filename) return 'unknown';
-
-  const extension = filename.split('.').pop().toLowerCase();
-
-  // Tipi di file video
-  if (['mp4', 'mov', 'avi', 'wmv', 'mkv', 'flv', 'webm', 'mxf'].includes(extension)) {
-    return 'video';
-  }
-
-  // Tipi di file immagine
-  if (['jpg', 'jpeg', 'png', 'gif', 'bmp', 'tiff', 'webp', 'tga'].includes(extension)) {
-    return 'image';
-  }
-
-  // Tipi di file audio
-  if (['mp3', 'wav', 'ogg', 'aac', 'flac', 'wma'].includes(extension)) {
-    return 'audio';
-  }
-
-  return 'other';
-};
+// getFileType ora viene importato da mediaUtils
 
 // Componente per il browser dei media
 const MediaBrowser = ({ onSelectMedia }) => {
-  const { connected, mediaList, getMediaList } = useCaspar();
+  const { connected, mediaList, getAllMedia } = useCaspar(); // 🔥 Rimossa getMediaList inutilizzata
   const { addMedia } = useRundown();
 
   const [loading, setLoading] = useState(false);
@@ -74,24 +53,25 @@ const MediaBrowser = ({ onSelectMedia }) => {
 
   // Carica la lista dei media
   const loadMediaList = useCallback(async () => {
-    if (!connected) return;
+    // IMPORTANTE: Non richiediamo CasparCG connesso per vedere i file locali
+    // if (!connected) return;
 
     setLoading(true);
     try {
-      await getMediaList();
+      // 🚀 USA getAllMedia per ottenere TUTTI i media (assets + CasparCG)
+      await getAllMedia();
     } catch (error) {
       console.error('Errore nel caricamento della lista dei media:', error);
     } finally {
       setLoading(false);
     }
-  }, [connected, getMediaList]);
+  }, [getAllMedia]);
 
   // Carica la lista dei media all'avvio e quando cambia lo stato di connessione
   useEffect(() => {
-    if (connected) {
-      loadMediaList();
-    }
-  }, [connected, loadMediaList]);
+    // Carica sempre i media, anche senza CasparCG connesso (per vedere i file locali)
+    loadMediaList();
+  }, [loadMediaList]);
 
   // Filtra i media in base al termine di ricerca e al tipo di filtro
   useEffect(() => {
@@ -104,9 +84,10 @@ const MediaBrowser = ({ onSelectMedia }) => {
 
     // Applica il filtro di ricerca
     if (searchTerm) {
-      filtered = filtered.filter(media =>
-        media.toLowerCase().includes(searchTerm.toLowerCase())
-      );
+      filtered = filtered.filter(media => {
+        const mediaName = getMediaDisplayName(media);
+        return mediaName.toLowerCase().includes(searchTerm.toLowerCase());
+      });
     }
 
     // Applica il filtro per tipo
@@ -128,11 +109,27 @@ const MediaBrowser = ({ onSelectMedia }) => {
   // Gestisce l'aggiunta di un media al rundown
   const handleAddToRundown = async (media) => {
     try {
+      // IMPORTANTE: Prendi la durata dal CLS se disponibile
+      let duration = null;
+      if (media.duration) {
+        // Se duration è in millisecondi, convertilo in formato HH:MM:SS
+        const ms = media.duration;
+        const seconds = Math.floor(ms / 1000);
+        const minutes = Math.floor(seconds / 60);
+        const hours = Math.floor(minutes / 60);
+        const remainingMinutes = minutes % 60;
+        const remainingSeconds = seconds % 60;
+        duration = `${String(hours).padStart(2, '0')}:${String(remainingMinutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
+        
+        console.log(`📊 DURATA MEDIA: "${getMediaDisplayName(media)}" = ${duration} (${ms}ms)`);
+      }
+      
       const mediaData = {
-        clip: media,
-        name: media,
+        clip: getMediaValue(media),
+        name: getMediaDisplayName(media),
         channel: 1,
-        layer: 10
+        layer: 10,
+        duration: duration // Aggiungi la durata dal CLS
       };
 
       await addMedia(mediaData);
@@ -158,8 +155,8 @@ const MediaBrowser = ({ onSelectMedia }) => {
   };
 
   // Restituisce l'icona appropriata per il tipo di file
-  const getFileIcon = (filename) => {
-    const fileType = getFileType(filename);
+  const getFileIcon = (media) => {
+    const fileType = getFileType(media);
 
     switch (fileType) {
       case 'video':
@@ -180,7 +177,7 @@ const MediaBrowser = ({ onSelectMedia }) => {
 
         <Box>
           <Tooltip title="Aggiorna lista media">
-            <IconButton onClick={loadMediaList} disabled={loading || !connected}>
+            <IconButton onClick={loadMediaList} disabled={loading}>
               <RefreshIcon />
             </IconButton>
           </Tooltip>
@@ -243,7 +240,7 @@ const MediaBrowser = ({ onSelectMedia }) => {
         ) : (
           <Grid container spacing={2}>
             {filteredMedia.map((media) => (
-              <Grid item xs={12} sm={6} md={4} lg={3} key={media}>
+              <Grid item xs={12} sm={6} md={4} lg={3} key={getMediaKey(media)}>
                 <Card
                   sx={{
                     bgcolor: selectedMedia === media ? 'primary.dark' : 'background.paper',
@@ -255,7 +252,7 @@ const MediaBrowser = ({ onSelectMedia }) => {
                       <Box sx={{ display: 'flex', alignItems: 'center' }}>
                         {getFileIcon(media)}
                         <Typography variant="body2" sx={{ ml: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {media}
+                          {getMediaDisplayName(media)}
                         </Typography>
                       </Box>
                     </CardContent>

@@ -1052,7 +1052,12 @@ const WeeklyCalendar = () => {
       <Dialog open={mediaSelectorOpen} onClose={() => setMediaSelectorOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle>Seleziona Media da Server CasparCG</DialogTitle>
         <DialogContent sx={{minHeight:'300px', maxHeight:'50vh', overflowY:'auto'}}>
-          {mediaList.length > 0 ? <List>{mediaList.map((media) => (<ListItem key={media} onClick={() => { setRundownPath(media); setRundownName(media.split('.')[0]); setMediaSelectorOpen(false);}} sx={{cursor:'pointer', '&:hover':{backgroundColor:'rgba(255,255,255,0.08)'}}}><ListItemText primary={media} /></ListItem>))}</List> : <Typography>Nessun media trovato o non connesso.</Typography>}
+          {mediaList.length > 0 ? <List>{mediaList.map((media) => {
+            const mediaName = typeof media === 'string' ? media : (media?.name || media?.path || 'Media sconosciuto');
+            const mediaPath = typeof media === 'string' ? media : (media?.path || media?.name || media);
+            const displayName = typeof media === 'string' ? media.split('.')[0] : (media?.name ? media.name.split('.')[0] : 'Media');
+            return (<ListItem key={mediaName} onClick={() => { setRundownPath(mediaPath); setRundownName(displayName); setMediaSelectorOpen(false);}} sx={{cursor:'pointer', '&:hover':{backgroundColor:'rgba(255,255,255,0.08)'}}}><ListItemText primary={mediaName} /></ListItem>);
+          })}</List> : <Typography>Nessun media trovato o non connesso.</Typography>}
         </DialogContent>
         <DialogActions><Button onClick={() => setMediaSelectorOpen(false)}>Annulla</Button></DialogActions>
       </Dialog>
@@ -1060,7 +1065,12 @@ const WeeklyCalendar = () => {
       <Dialog open={templateSelectorOpen} onClose={() => setTemplateSelectorOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle>Seleziona Template da Server CasparCG</DialogTitle>
         <DialogContent sx={{minHeight:'300px', maxHeight:'50vh', overflowY:'auto'}}>
-         {templateList.length > 0 ? <List>{templateList.map((template) => (<ListItem key={template} onClick={() => { setRundownPath(template); setRundownName(template.split('.')[0]); setTemplateSelectorOpen(false);}} sx={{cursor:'pointer', '&:hover':{backgroundColor:'rgba(255,255,255,0.08)'}}}><ListItemText primary={template} /></ListItem>))}</List> : <Typography>Nessun template trovato o non connesso.</Typography>}
+         {templateList.length > 0 ? <List>{templateList.map((template) => {
+            const templateName = typeof template === 'string' ? template : (template?.name || template?.path || 'Template sconosciuto');
+            const templatePath = typeof template === 'string' ? template : (template?.path || template?.name || template);
+            const displayName = typeof template === 'string' ? template.split('.')[0] : (template?.name ? template.name.split('.')[0] : 'Template');
+            return (<ListItem key={templateName} onClick={() => { setRundownPath(templatePath); setRundownName(displayName); setTemplateSelectorOpen(false);}} sx={{cursor:'pointer', '&:hover':{backgroundColor:'rgba(255,255,255,0.08)'}}}><ListItemText primary={templateName} /></ListItem>);
+          })}</List> : <Typography>Nessun template trovato o non connesso.</Typography>}
         </DialogContent>
         <DialogActions><Button onClick={() => setTemplateSelectorOpen(false)}>Annulla</Button></DialogActions>
       </Dialog>

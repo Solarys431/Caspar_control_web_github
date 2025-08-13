@@ -1,0 +1,59 @@
+{
+  "name": "News Ticker",
+  "description": "Scrolling news ticker with multiple items",
+  "category": "News",
+  "thumbnail": "news-ticker-thumb.png",
+  "resolution": "1920x1080",
+  "fps": 25,
+  "fields": [
+    {
+      "id": "f0",
+      "label": "News Item 1",
+      "type": "text",
+      "default": "Importante summit internazionale a Roma per discutere il futuro dell'economia europea",
+      "required": true
+    },
+    {
+      "id": "f1",
+      "label": "News Item 2",
+      "type": "text",
+      "default": "Nuovo record per la borsa di Milano: FTSE MIB supera i 30.000 punti",
+      "required": false
+    },
+    {
+      "id": "f2",
+      "label": "News Item 3",
+      "type": "text",
+      "default": "Meteo: previste piogge intense nelle prossime 48 ore al Nord Italia",
+      "required": false
+    },
+    {
+      "id": "f3",
+      "label": "Category",
+      "type": "select",
+      "options": ["news", "breaking", "sports", "finance", "weather"],
+      "default": "news",
+      "required": false
+    },
+    {
+      "id": "f4",
+      "label": "Scroll Speed",
+      "type": "select",
+      "options": ["slow", "medium", "fast"],
+      "default": "medium",
+      "required": false
+    },
+    {
+      "id": "f5",
+      "label": "Show Time",
+      "type": "checkbox",
+      "default": "true",
+      "required": false
+    }
+  ],
+  "preview": {
+    "duration": 0,
+    "loop": true,
+    "persistent": true
+  }
+}

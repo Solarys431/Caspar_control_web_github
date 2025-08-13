@@ -284,21 +284,19 @@ export const RundownProvider = ({ children }) => {
   }, []);
 
   const getMediaDuration = useCallback(async (mediaPath) => {
-    if (!connected) return '00:05:00';
+    if (!connected) {
+      if (typeof addLog === 'function') addLog(`❌ NESSUNA DURATA: Non connesso per ${mediaPath} - NESSUN FALLBACK HARDCODED`, 'warning');
+      return null;
+    }
     try {
-      if (typeof addLog === 'function') addLog(`Richiesta durata (stimata) per: ${mediaPath}`);
-      const fileExtension = mediaPath.split('.').pop().toLowerCase();
-      const defaultDurations = {
-        'mp4': '00:02:00', 'mov': '00:01:30', 'avi': '00:03:00', 'mxf': '00:04:00',
-        'mp3': '00:03:30', 'wav': '00:01:00',
-        'png': '00:00:05', 'jpg': '00:00:05',
-      };
-      const duration = defaultDurations[fileExtension] || '00:05:00';
-      if (typeof addLog === 'function') addLog(`Durata stimata per ${mediaPath}: ${duration}`);
-      return duration;
+      if (typeof addLog === 'function') addLog(`⚠️ DURATA NON REALE: Richiesta durata per ${mediaPath} - NESSUNA STIMA HARDCODED DISPONIBILE`, 'warning');
+      
+      // ❌ NESSUNA DURATA HARDCODED - Restituisci null per indicare durata sconosciuta
+      if (typeof addLog === 'function') addLog(`❌ NESSUNA STIMA: Impossibile stimare durata per ${mediaPath} senza dati OSC reali`, 'warning');
+      return null;
     } catch (error) {
-      if (typeof addLog === 'function') addLog(`Errore stima durata: ${error.message}`, 'error');
-      return '00:05:00';
+      if (typeof addLog === 'function') addLog(`❌ ERRORE DURATA: ${error.message} per ${mediaPath} - NESSUN FALLBACK HARDCODED`, 'error');
+      return null;
     }
   }, [connected, addLog]);
 
@@ -324,7 +322,7 @@ export const RundownProvider = ({ children }) => {
 
         const supabaseMediaData = {
           ...mediaData,
-          duration: duration || '00:05:00',
+          duration: duration, // ❌ NESSUN FALLBACK HARDCODED
           customName: mediaData.customName || mediaData.name || mediaData.clip?.split('/').pop() || 'Media Sconosciuto'
         };
 
@@ -371,7 +369,7 @@ export const RundownProvider = ({ children }) => {
           autoNext: mediaData.autoNext || false,
           linkedTemplate: mediaData.linkedTemplate || null,
           startTime: mediaData.startTime || '00:00:00',
-          duration: duration || '00:05:00',
+          duration: duration, // ❌ NESSUN FALLBACK HARDCODED
           location: mediaData.location || mediaData.clip,
           note: mediaData.note || '',
           inPoint: mediaData.inPoint || '00:00:00',
@@ -471,7 +469,7 @@ export const RundownProvider = ({ children }) => {
           data,
           customName: templateData.customName || '',
           startTime: templateData.startTime || '00:00:00',
-          duration: templateData.duration || '00:01:00',
+          duration: templateData.duration, // ❌ NESSUN FALLBACK HARDCODED
           location: templateData.location || templateData.template,
           note: templateData.note || '',
           inPoint: templateData.inPoint || '00:00:00',
@@ -549,7 +547,7 @@ export const RundownProvider = ({ children }) => {
         channel: storyData.channel || 1,
         layer: storyData.layer || 10,
         startTime: storyData.startTime || '00:00:00',
-        duration: storyData.duration || '00:00:10',
+        duration: storyData.duration, // ❌ NESSUN FALLBACK HARDCODED
         location: storyData.location || `CH${storyData.channel || 1}-L${storyData.layer || 10}`,
         notes: storyData.notes || '',
         // Mantieni tutti i dettagli originali della storia
@@ -564,7 +562,7 @@ export const RundownProvider = ({ children }) => {
         // Timing
         timing: {
           startTime: storyData.startTime || '00:00:00',
-          duration: storyData.duration || '00:00:10',
+          duration: storyData.duration, // ❌ NESSUN FALLBACK HARDCODED
           inPoint: '00:00:00:00',
           outPoint: '00:00:00:00'
         },
@@ -1028,6 +1026,11 @@ export const RundownProvider = ({ children }) => {
       if (typeof addLog === 'function') addLog(`🔧 PLAY_ITEM: Calling updateItemPlayingStatus for "${item.name}"`, 'debug');
       updateItemPlayingStatus(item.id, true);
       
+      // AUTOPLAY FIX: La funzione deve restituire successo esplicito
+      if (typeof addLog === 'function') addLog(`✅ PLAY_ITEM: Completed successfully for "${item.name}"`, 'info');
+      console.error(`🚨 [FORCE-DEBUG] playItem RETURNING TRUE for "${item.name}"`);
+      return true;
+      
     } catch (error) {
       console.error(`RUNDOWN_CONTEXT_PLAY_ITEM: Errore nella riproduzione dell'item ${item.id} (${item.name}):`, error);
       if (typeof addLog === 'function') addLog(`Play fallito per ${item.name}: ${error.message}`, 'error');
@@ -1039,6 +1042,9 @@ export const RundownProvider = ({ children }) => {
         )
       );
       setPlayingItems(prev => prev.filter(id => id !== item.id));
+      
+      // AUTOPLAY FIX: Re-throw dell'errore per propagarlo al .catch() dell'autoplay
+      throw error;
     }
   }, [connected, play, cgAdd, cgPlay, items, addLog, setItems, setPlayingItems, stopItem, nextItemPrepared, validateTemplate, templateList, updateItemPlayingStatus]);
 
@@ -1113,17 +1119,25 @@ export const RundownProvider = ({ children }) => {
 
   // SISTEMA LOOP CORRETTO: Eliminato bug di stale closure
   const playAll = useCallback((enableLoop = false) => {
+    // DEBUG CRITICO: Verifica chiamata playAll - CONSOLE LOG FORZATO
+    console.error(`🚨 [FORCE-DEBUG] PLAYALL CALLED: enableLoop=${enableLoop}, connected=${connected}, items=${items.length}`);
+    
     // DEBUG CRITICO: Verifica chiamata playAll
     if (typeof addLog === 'function') {
       addLog(`🚀 PLAYALL CALLED: enableLoop=${enableLoop}, connected=${connected}, items=${items.length}`, 'info');
+    } else {
+      console.error(`🚨 [FORCE-DEBUG] addLog is NOT a function: ${typeof addLog}`);
     }
     
     if (!connected || items.length === 0) {
+      console.error(`🚨 [FORCE-DEBUG] EARLY RETURN: connected=${connected}, items.length=${items.length}`);
       if (typeof addLog === 'function') {
         addLog('❌ AUTOPLAY: Impossibile avviare - non connesso o lista vuota', 'warning');
       }
       return;
     }
+    
+    console.error(`🚨 [FORCE-DEBUG] VALIDATION PASSED: connected=${connected}, items.length=${items.length}`);
     
     // CORREZIONE CRITICA: Stop eventuali loop precedenti
     if (loopControlRef.current.timerId) {
@@ -1157,7 +1171,10 @@ export const RundownProvider = ({ children }) => {
 
     // CORREZIONE: Sistema autonomo senza dipendenze da closure
     const executeSequence = () => {
+      console.error(`🚨 [FORCE-DEBUG] EXECUTE SEQUENCE CALLED`);
+      
       const playNext = () => {
+        console.error(`🚨 [FORCE-DEBUG] PLAY NEXT CALLED: currentIndex=${loopControlRef.current.currentIndex}`);
         // CORREZIONE: Controllo su ref invece di stato React
         if (!loopControlRef.current.running) {
           if (typeof addLog === 'function') addLog('⏹️ AUTOPLAY: Fermato manualmente', 'info');
@@ -1165,9 +1182,11 @@ export const RundownProvider = ({ children }) => {
         }
         
         const currentIndex = loopControlRef.current.currentIndex;
+        console.error(`🚨 [FORCE-DEBUG] PLAY NEXT: currentIndex=${currentIndex}, items.length=${items.length}`);
         
         // LOOP: Gestione fine playlist
         if (currentIndex >= items.length) {
+          console.error(`🚨 [FORCE-DEBUG] CURRENT INDEX >= ITEMS LENGTH: ${currentIndex} >= ${items.length}`);
           if (loopControlRef.current.shouldLoop) {
             if (typeof addLog === 'function') addLog('🔄 AUTOPLAY LOOP: Fine playlist - Riavvio dal primo', 'info');
             setRundownIsLooping(true);
@@ -1208,231 +1227,86 @@ export const RundownProvider = ({ children }) => {
         updateItemStates(currentIndex);
         
         // Riproduzione asincrona dell'elemento
+        console.error(`🚨 [FORCE-DEBUG] ABOUT TO CALL playItem for "${currentItem.name}"`);
+        
         playItem(currentItem)
           .then(() => {
-            // Calcola durata per timing
-            let durationMs = 5000; // Default 5 secondi
+            console.error(`🚨 [FORCE-DEBUG] playItem .then() EXECUTED for "${currentItem.name}"`);
             
-            if (currentItem.data?.duration) {
-              try {
-                const [h, m, s] = currentItem.data.duration.split(':').map(Number);
-                durationMs = (h * 3600 + m * 60 + s) * 1000;
-                if (durationMs <= 0 || isNaN(durationMs)) durationMs = 5000;
-              } catch (e) {
-                if (typeof addLog === 'function') {
-                  addLog(`⚠️ AUTOPLAY: Durata non valida per "${currentItem.name}", uso 5s`, 'warning');
-                }
-              }
-            }
-            
-            // Template hanno durata più breve
-            if (currentItem.type === 'TEMPLATE') {
-              durationMs = Math.min(durationMs, 3000);
-            }
-            
+            // DEBUG CRITICO: Log che playItem è completato
             if (typeof addLog === 'function') {
-              addLog(`⏱️ AUTOPLAY: Attesa ${Math.round(durationMs/1000)}s per "${currentItem.name}"`, 'debug');
+              addLog(`🔥 [CRITICAL-DEBUG] playItem completed per "${currentItem.name}" - Avvio startSmartAutoSequential`, 'info');
+            } else {
+              console.error(`🚨 [FORCE-DEBUG] addLog is NOT a function in playItem .then()`);
             }
             
-            // MIGLIORAMENTO 2 INTEGRATO: Smart Auto-Sequential con detection frame-based
-            const startSmartAutoSequential = () => {
-              const channelLayer = `${currentItem.data?.channel || 1}-${currentItem.data?.layer || 10}`;
-              let isSequentialActive = true;
-              let oscPollingInterval = null;
-              let fallbackTimer = null;
-              const POLLING_INTERVAL = 500; // Polling ogni 500ms per bilanciare precisione e performance
+            // ✅ LOOP SEMPLICE CON DURATA ESATTA DAL CLS
+            
+            // NUOVO SISTEMA SEMPLICE: Timer con durata esatta
+            const startSimpleTimer = () => {
+              // Se l'item ha una durata definita (da CLS o manuale), usa quella
+              const durationStr = currentItem.duration || currentItem.data?.duration;
               
-              // MIGLIORAMENTO 2: Helper per convertire timecode in frame (assumendo 25fps)
-              const timecodeToFrames = (timecode) => {
-                if (!timecode || timecode === '00:00:00:00') return 0;
-                try {
-                  const parts = timecode.split(':');
-                  if (parts.length !== 4) return 0;
-                  const [hours, minutes, seconds, frames] = parts.map(Number);
-                  const totalSeconds = hours * 3600 + minutes * 60 + seconds;
-                  return totalSeconds * 25 + frames; // Assumiamo 25fps
-                } catch (e) {
-                  return 0;
-                }
-              };
-              
-              // MIGLIORAMENTO 2: Helper per rilevare fine media con detection intelligente
-              const isMediaFinished = (oscChannelData, currentTimecode, mediaLengthData) => {
-                if (!oscChannelData || !oscConnected) return false;
-                
-                // METODO 1: Frame-based detection (più preciso)
-                if (typeof oscChannelData.frame === 'number' && typeof oscChannelData.length === 'number' && oscChannelData.length > 0) {
-                  const progress = (oscChannelData.frame / oscChannelData.length) * 100;
-                  const isFinished = progress >= 95 && !oscChannelData.paused;
-                  if (isFinished && typeof addLog === 'function') {
-                    addLog(`🎬 [MIGLIORAMENTO 2] Media finito (frame): ${progress.toFixed(2)}% (${oscChannelData.frame}/${oscChannelData.length})`, 'info');
-                  }
-                  return isFinished;
-                }
-                
-                // METODO 2: Timecode-based detection con durata media
-                if (currentTimecode && mediaLengthData?.frames > 0) {
-                  const currentFrames = timecodeToFrames(currentTimecode);
-                  if (currentFrames > 0) {
-                    const progress = (currentFrames / mediaLengthData.frames) * 100;
-                    const isFinished = progress >= 95 && !oscChannelData.paused;
-                    if (isFinished && typeof addLog === 'function') {
-                      addLog(`🎬 [MIGLIORAMENTO 2] Media finito (timecode): ${progress.toFixed(2)}% (${currentFrames}/${mediaLengthData.frames})`, 'info');
-                    }
-                    return isFinished;
+              // Converti durata da HH:MM:SS a millisecondi
+              let durationMs = null;
+              if (durationStr) {
+                if (typeof durationStr === 'number') {
+                  // Se è già un numero, usalo direttamente
+                  durationMs = durationStr;
+                } else if (typeof durationStr === 'string' && durationStr.includes(':')) {
+                  // Converti da HH:MM:SS a millisecondi
+                  const parts = durationStr.split(':');
+                  if (parts.length === 3) {
+                    const [hours, minutes, seconds] = parts.map(Number);
+                    durationMs = (hours * 3600 + minutes * 60 + seconds) * 1000;
                   }
                 }
-                
-                return false;
-              };
-              
-              // DEBUG CRITICO log iniziale
-              if (typeof addLog === 'function') {
-                addLog(`🚀 [MIGLIORAMENTO 2] START_SMART_SEQUENTIAL: "${currentItem.name}" su ${channelLayer}`, 'info');
-                addLog(`🔍 [MIGLIORAMENTO 2] OSC Connected: ${oscConnected}, OSC Data keys: ${oscData ? Object.keys(oscData).join(',') : 'NULL'}`, 'info');
               }
               
-              // MIGLIORAMENTO 2: OSC Monitoring con detection intelligente
-              const startOscMonitoring = () => {
-                if (!isSequentialActive || !loopControlRef.current.running) {
-                  if (typeof addLog === 'function') addLog('⏹️ [MIGLIORAMENTO 2] Stop monitoring (loop fermato)', 'debug');
-                  return;
+              if (durationMs && durationMs > 0) {
+                // 🎯 SOLUZIONE SEMPLICE: setTimeout con durata esatta
+                if (typeof addLog === 'function') {
+                  addLog(`⏰ LOOP TIMER: "${currentItem.name}" durerà ${durationMs}ms (${durationStr})`, 'info');
                 }
                 
-                oscPollingInterval = setInterval(() => {
-                  if (!isSequentialActive || !loopControlRef.current.running) {
-                    clearInterval(oscPollingInterval);
-                    return;
-                  }
-                  
-                  // Verifica connessione OSC e disponibilità dati
-                  if (!oscConnected || !oscData || !oscData[channelLayer]) {
-                    // OSC non disponibile - continua polling
-                    return;
-                  }
-                  
-                  // Ottieni dati OSC real-time
-                  const oscChannelData = oscData[channelLayer];
-                  const currentTimecode = timecodes ? timecodes[channelLayer] : null;
-                  
-                  // Log dettagliato per debug (solo ogni 10 polling per ridurre spam)
-                  if (Math.random() < 0.1 && typeof addLog === 'function') {
-                    addLog(`🎬 [MIGLIORAMENTO 2] OSC-MONITORING ${currentItem.name}: TC=${currentTimecode}, Frame=${oscChannelData?.frame}/${oscChannelData?.length}, Paused=${oscChannelData?.paused}`, 'debug');
-                  }
-                  
-                  // MIGLIORAMENTO 2: Verifica se il media è finito con dati di durata
-                  const mediaKey = channelLayer;
-                  const mediaLengthData = mediaLengths ? mediaLengths[mediaKey] : null;
-                  
-                  if (isMediaFinished(oscChannelData, currentTimecode, mediaLengthData)) {
-                    // MIGLIORAMENTO 2: Calcola e aggiorna durata effettiva del media
-                    const actualDuration = calculateActualDuration(currentItem, currentTimecode);
-                    updateItemDuration(currentItem.id, actualDuration);
-                    
-                    if (typeof addLog === 'function') {
-                      addLog(`🎬 [MIGLIORAMENTO 2] AUTO-SEQUENTIAL: Fine media rilevata per ${currentItem.name}, durata: ${actualDuration}, avvio prossimo`, 'info');
-                    }
-                    
-                    // Ferma il monitoring
-                    isSequentialActive = false;
-                    clearInterval(oscPollingInterval);
-                    if (fallbackTimer) clearTimeout(fallbackTimer);
-                    
-                    // Avvia il prossimo elemento
-                    loopControlRef.current.currentIndex++;
-                    playNext();
-                  }
-                }, POLLING_INTERVAL);
-              };
-              
-              // MIGLIORAMENTO 2: Fallback timer intelligente con durata media reale
-              const setupFallbackTimer = () => {
-                let fallbackDurationMs = 5000; // Default 5 secondi
-                
-                // METODO 1: Usa durata da mediaLengths OSC (più preciso)
-                const mediaKey = channelLayer;
-                const mediaLengthData = mediaLengths ? mediaLengths[mediaKey] : null;
-                
-                if (mediaLengthData?.frames > 0) {
-                  // Converti frames in millisecondi (assumendo 25fps)
-                  fallbackDurationMs = Math.round((mediaLengthData.frames / 25) * 1000);
-                  if (typeof addLog === 'function') {
-                    addLog(`🎯 [MIGLIORAMENTO 2] FALLBACK con durata OSC: ${Math.round(fallbackDurationMs/1000)}s (${mediaLengthData.frames} frames)`, 'info');
-                  }
-                } else if (currentItem.duration && currentItem.duration > 0) {
-                  // METODO 2: Usa durata configurata nell'item
-                  fallbackDurationMs = currentItem.duration * 1000;
-                  if (typeof addLog === 'function') {
-                    addLog(`🎯 [MIGLIORAMENTO 2] FALLBACK con durata item: ${currentItem.duration}s`, 'info');
-                  }
-                } else {
-                  // METODO 3: Fallback ai 5 secondi originali
-                  if (typeof addLog === 'function') {
-                    addLog(`🎯 [MIGLIORAMENTO 2] FALLBACK timer default: 5s`, 'info');
-                  }
-                }
-                
-                // Template handling - uso timer fisso ridotto
-                if (currentItem.type === 'TEMPLATE') {
-                  fallbackDurationMs = Math.min(fallbackDurationMs, 3000);
-                  if (typeof addLog === 'function') {
-                    addLog(`🎨 [MIGLIORAMENTO 2] TEMPLATE: "${currentItem.name}" - timer fisso ${fallbackDurationMs}ms`, 'info');
-                  }
-                }
-                
-                // Imposta fallback timer
-                fallbackTimer = setTimeout(() => {
-                  if (!isSequentialActive) return;
-                  
-                  isSequentialActive = false;
-                  if (oscPollingInterval) clearInterval(oscPollingInterval);
-                  
-                  // MIGLIORAMENTO 2: Calcola durata effettiva anche per fallback
-                  const fallbackTimecode = timecodes ? timecodes[channelLayer] : null;
-                  const actualDuration = calculateActualDuration(currentItem, fallbackTimecode);
-                  updateItemDuration(currentItem.id, actualDuration);
+                // Timer semplice con la durata esatta
+                loopControlRef.current.timerId = setTimeout(() => {
+                  if (!loopControlRef.current.running) return;
                   
                   if (typeof addLog === 'function') {
-                    addLog(`⏰ [MIGLIORAMENTO 2] FALLBACK TRIGGER: "${currentItem.name}" dopo ${Math.round(fallbackDurationMs/1000)}s, durata: ${actualDuration}`, 'info');
+                    addLog(`✅ LOOP: "${currentItem.name}" completato dopo ${durationMs}ms`, 'success');
                   }
                   
+                  // Passa al prossimo video IMMEDIATAMENTE
                   loopControlRef.current.currentIndex++;
                   playNext();
-                }, fallbackDurationMs);
-              };
-              
-              // Avvia monitoring OSC e fallback timer
-              startOscMonitoring();
-              setupFallbackTimer();
-              
-              // Cleanup function quando il loop si ferma
-              const cleanup = () => {
-                isSequentialActive = false;
-                if (oscPollingInterval) clearInterval(oscPollingInterval);
-                if (fallbackTimer) clearTimeout(fallbackTimer);
-              };
-              
-              // Salva la funzione di cleanup per poterla chiamare quando necessario
-              loopControlRef.current.cleanup = cleanup;
+                }, durationMs);
+                
+              } else {
+                // NESSUN FALLBACK! Nel broadcast se non c'è durata, ERRORE!
+                if (typeof addLog === 'function') {
+                  addLog(`❌ ERRORE: "${currentItem.name}" SENZA DURATA - NON PUÒ PARTIRE!`, 'error');
+                }
+                
+                // Salta questo item e passa al prossimo
+                console.error(`❌ BROADCAST ERROR: No duration for "${currentItem.name}" - SKIPPING!`);
+                loopControlRef.current.currentIndex++;
+                playNext();
+              }
             };
             
-            // DEBUG CRITICO: Verifica che startSmartAutoSequential sia chiamato
-            if (typeof addLog === 'function') {
-              addLog(`🔧 [MIGLIORAMENTO 2] CALLING startSmartAutoSequential per "${currentItem.name}"`, 'info');
-            }
-            startSmartAutoSequential();
+            // Avvia il timer semplice
+            startSimpleTimer();
             
           })
           .catch((error) => {
+            console.error(`Errore play item "${currentItem.name}":`, error);
             if (typeof addLog === 'function') {
-              addLog(`❌ AUTOPLAY ERRORE: "${currentItem.name}" - ${error.message} - Continuo`, 'error');
+              addLog(`❌ Errore play "${currentItem.name}": ${error.message}`, 'error');
             }
-            
-            // In caso di errore, passa al prossimo dopo 1 secondo
-            loopControlRef.current.timerId = setTimeout(() => {
-              loopControlRef.current.currentIndex++;
-              playNext();
-            }, 1000);
+            // In caso di errore, passa al prossimo
+            loopControlRef.current.currentIndex++;
+            playNext();
           });
       };
       
@@ -1440,63 +1314,51 @@ export const RundownProvider = ({ children }) => {
       playNext();
     };
     
-    // Avvia immediatamente
+    // AVVIA LA SEQUENZA!
     executeSequence();
+  }, [connected, items, playItem, setAutoPlay, setCurrentPlayingIndex, setRundownIsLooping, setLoopEnabled, addLog, stopItem, setModified]);
     
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [connected, items, playItem, setAutoPlay, setCurrentPlayingIndex, setLoopEnabled, setRundownIsLooping, addLog, oscConnected, oscData]);
-
-  // SISTEMA CORRETTO: Logica autonoma senza stale closures
-
-  const stopAll = useCallback(() => {
-    // SISTEMA SEMPLIFICATO: Stop immediato e pulizia stati
-    setAutoPlay(false);
-    setCurrentPlayingIndex(-1);
-    setRundownIsLooping(false);
-    setLoopEnabled(false);
-    
-    // CORREZIONE: Stop sistema loop e pulizia timer OSC
-    if (loopControlRef.current.timerId) {
-      clearTimeout(loopControlRef.current.timerId);
-      loopControlRef.current.timerId = null;
-    }
-    
-    // MIGLIORAMENTO 2: Cleanup del nuovo sistema smart auto-sequential
-    if (loopControlRef.current.cleanup) {
-      loopControlRef.current.cleanup();
-      loopControlRef.current.cleanup = null;
-    }
-    
-    loopControlRef.current.running = false;
-    
-    // Ferma tutti gli elementi in riproduzione
-    playingItems.forEach(itemId => {
-      const itemToStop = items.find(i => i.id === itemId);
-      if (itemToStop) stopItem(itemToStop, false);
-    });
-    
-    setPlayingItems([]);
-    setItems(prev => prev.map(i => ({
-      ...i, 
-      isPlaying: false, 
-      playingStartTime: null,
-      // RESET STATI: Resetta tutti gli stati ON AIR/NEXT
-      data: {
-        ...i.data,
-        itemState: 'normal'
+    // FUNZIONE STOP ALL
+    const stopAll = useCallback(() => {
+      // Stop immediato e pulizia stati
+      setAutoPlay(false);
+      setCurrentPlayingIndex(-1);
+      setRundownIsLooping(false);
+      setLoopEnabled(false);
+      
+      // Stop timer del loop
+      if (loopControlRef.current.timerId) {
+        clearTimeout(loopControlRef.current.timerId);
+        loopControlRef.current.timerId = null;
       }
-    })));
+      
+      // Cleanup generale
+      if (loopControlRef.current.cleanup) {
+        loopControlRef.current.cleanup();
+        loopControlRef.current.cleanup = null;
+      }
+      
+      loopControlRef.current.running = false;
+      
+      // Ferma tutti gli elementi in riproduzione
+      playingItems.forEach(itemId => {
+        const itemToStop = items.find(i => i.id === itemId);
+        if (itemToStop) stopItem(itemToStop, false);
+      });
+      
+      if (typeof addLog === 'function') {
+        addLog('⏹️ STOP ALL: Riproduzione fermata');
+      }
+    }, [setAutoPlay, setCurrentPlayingIndex, setRundownIsLooping, setLoopEnabled, playingItems, items, stopItem, addLog]);
     
-    if (typeof addLog === 'function') addLog('⏹️ AUTOPLAY: Stop completo - Sistema loop fermato e tutti gli elementi fermati', 'info');
-  }, [items, stopItem, playingItems, setPlayingItems, setItems, setAutoPlay, setCurrentPlayingIndex, setRundownIsLooping, setLoopEnabled, addLog]);
-
   const saveRundown = useCallback(() => {
-    const rundownData = { name: rundownName, items };
-    const blob = new Blob([JSON.stringify(rundownData, null, 2)], { type: 'application/json' });
+    const data = { name: rundownName, items };
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${rundownName.replace(/\s+/g, '_') || 'rundown'}.json`;
+    a.download = `${rundownName}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -1519,7 +1381,7 @@ export const RundownProvider = ({ children }) => {
                     ...pItem.data,
                     // Assicurati che i campi base siano presenti
                     startTime: pItem.data?.startTime || '00:00:00',
-                    duration: pItem.data?.duration || '00:01:00',
+                    duration: pItem.data?.duration, // ❌ NESSUN FALLBACK HARDCODED
                     customName: pItem.data?.customName || pItem.name || 'Storia Importata',
                     originalName: pItem.data?.originalName || pItem.name || 'Storia Importata',
                     notificationSent: false,
@@ -1541,7 +1403,7 @@ export const RundownProvider = ({ children }) => {
             cgLayer: pItem.data?.cgLayer || pItem.cgLayer || 1,
             customName: pItem.data?.customName || pItem.customName || '',
             startTime: pItem.data?.startTime || pItem.startTime || '00:00:00',
-            duration: pItem.data?.duration || pItem.duration || '00:01:00',
+            duration: pItem.data?.duration || pItem.duration, // ❌ NESSUN FALLBACK HARDCODED
             data: pItem.data?.data || pItem.data || {},
             loop: pItem.data?.loop || pItem.loop || false,
             playOnLoad: pItem.data?.playOnLoad !== undefined ? pItem.data.playOnLoad : true,
@@ -1738,9 +1600,10 @@ export const RundownProvider = ({ children }) => {
     
     if (!item.playingStartTime) {
       if (typeof addLog === 'function') {
-        addLog(`⚠️ CALC_DURATION: Missing playingStartTime for ${item.name}`, 'warning');
+        addLog(`⚠️ CALC_DURATION: Missing playingStartTime for ${item.name} - NESSUN FALLBACK HARDCODED`, 'warning');
       }
-      return item.data?.duration || '00:00:05';
+      // ❌ NESSUN FALLBACK HARDCODED - Restituisci null per indicare durata sconosciuta
+      return null;
     }
     
     try {
@@ -1767,9 +1630,10 @@ export const RundownProvider = ({ children }) => {
       return newDuration;
     } catch (error) {
       if (typeof addLog === 'function') {
-        addLog(`⚠️ TIMING: Errore calcolo durata per ${item.name}: ${error.message}`, 'warning');
+        addLog(`⚠️ TIMING: Errore calcolo durata per ${item.name}: ${error.message} - NESSUN FALLBACK HARDCODED`, 'warning');
       }
-      return item.data?.duration || '00:00:05';
+      // ❌ NESSUN FALLBACK HARDCODED - Restituisci null in caso di errore
+      return null;
     }
   }, [addLog]);
 
@@ -1798,6 +1662,14 @@ export const RundownProvider = ({ children }) => {
   }, [setItems, addLog]);
 
   const updateItemStates = useCallback((currentIndex) => {
+    // DEBUG LOGGING: Traccia aggiornamenti stati
+    console.log(`🎬 [STATES DEBUG] updateItemStates chiamato:`, {
+      currentIndex,
+      totalItems: items.length,
+      shouldLoop: loopControlRef.current.shouldLoop,
+      isLoopActive: loopControlRef.current.running
+    });
+
     setItems(prevItems =>
       prevItems.map((item, index) => {
         let newState = 'normal';
@@ -1806,6 +1678,11 @@ export const RundownProvider = ({ children }) => {
           newState = 'onair'; // Item corrente in riproduzione
         } else if (index === currentIndex + 1 || (loopControlRef.current.shouldLoop && currentIndex === prevItems.length - 1 && index === 0)) {
           newState = 'next'; // Prossimo item o primo item se loop infinito
+        }
+
+        // DEBUG LOGGING: Log cambiamenti di stato
+        if (item.data?.itemState !== newState && (newState === 'onair' || newState === 'next')) {
+          console.log(`🎬 [STATES DEBUG] Item ${index + 1} "${item.name}" -> ${newState}`);
         }
         
         return {
@@ -1833,39 +1710,28 @@ export const RundownProvider = ({ children }) => {
 
   // SISTEMA SEMPLIFICATO: Controlli loop diretti
   const playAllWithLoop = useCallback(() => {
-    console.log('🔍 DEBUG playAllWithLoop: connected =', connected, 'items.length =', items.length);
-    console.log('🔍 DEBUG playAllWithLoop: typeof addLog =', typeof addLog);
-    console.log('🔍 DEBUG playAllWithLoop: typeof playAll =', typeof playAll);
+    console.log('🟣 [LOOP-DEBUG] playAllWithLoop STARTED: connected =', connected, 'items.length =', items.length);
+    console.log('🟣 [LOOP-DEBUG] typeof addLog =', typeof addLog);
+    console.log('🟣 [LOOP-DEBUG] typeof playAll =', typeof playAll);
     
     if (!connected || items.length === 0) {
-      console.log('🔍 DEBUG playAllWithLoop: Early return - connected:', connected, 'items.length:', items.length);
-      if (typeof addLog === 'function') addLog(`⚠️ LOOP: Impossibile avviare - connected: ${connected}, items: ${items.length}`, 'warning');
+      console.log('🟣 [LOOP-DEBUG] Early return - connected:', connected, 'items.length:', items.length);
+      console.error('🚨 [CRITICAL] playAllWithLoop BLOCKED: no connection or items');
       return;
     }
     
-    console.log('🔍 DEBUG playAllWithLoop: About to call addLog for LOOP INFINITO');
-    if (typeof addLog === 'function') {
-      addLog('🔄 LOOP INFINITO: Avvio riproduzione continua', 'info');
-    }
-    console.log('🔍 DEBUG playAllWithLoop: addLog call completed');
+    console.log('🟣 [LOOP-DEBUG] Calling playAll(true)...');
+    console.error('🚨 [CRITICAL] About to call playAll(true)'); // Force visibility
     
-    console.log('🔍 DEBUG playAllWithLoop: About to call playAll(true)');
-    if (typeof addLog === 'function') {
-      addLog(`🔧 CALLING playAll(true) from playAllWithLoop`, 'info');
-    }
     try {
       playAll(true); // Attiva il loop infinito
-      console.log('🔍 DEBUG playAllWithLoop: playAll(true) call completed');
-      if (typeof addLog === 'function') {
-        addLog(`✅ playAll(true) chiamata completata da playAllWithLoop`, 'info');
-      }
+      console.log('🟣 [LOOP-DEBUG] playAll(true) call completed');
+      console.error('🚨 [CRITICAL] playAll(true) completed successfully'); // Force visibility
     } catch (error) {
-      console.error('🔍 DEBUG playAllWithLoop: ERROR in playAll(true):', error);
-      if (typeof addLog === 'function') {
-        addLog(`❌ ERRORE in playAll(true): ${error.message}`, 'error');
-      }
+      console.error('🟣 [LOOP-DEBUG] ERROR in playAll(true):', error);
+      console.error('🚨 [CRITICAL] FATAL ERROR in playAll(true):', error.message);
     }
-  }, [connected, items.length, addLog, playAll]); // FIXED: Aggiunto playAll alle dipendenze
+  }, [connected, items.length, playAll, addLog]); // FIXED: Added back addLog dependency for proper closure
 
   const toggleLoop = useCallback(() => {
     const newLoopStatus = !loopEnabled;

@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1920, height=1080">
+    <title>News Ticker</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            width: 1920px;
+            height: 1080px;
+            background: transparent;
+            font-family: 'Arial', 'Helvetica', sans-serif;
+            overflow: hidden;
+            position: relative;
+            -webkit-font-smoothing: antialiased;
+        }
+        
+        .ticker-wrapper {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 60px;
+            opacity: 0;
+            transform: translateY(100%);
+        }
+        
+        .ticker-container {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, 
+                rgba(16, 20, 30, 0.95) 0%, 
+                rgba(30, 35, 45, 0.95) 100%);
+            border-top: 3px solid rgb(220, 20, 60);
+            display: flex;
+            align-items: center;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .ticker-label {
+            position: absolute;
+            left: 0;
+            height: 100%;
+            background: rgb(220, 20, 60);
+            color: rgb(235, 235, 235);
+            font-size: 18px;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            padding: 0 30px;
+            display: flex;
+            align-items: center;
+            z-index: 10;
+            box-shadow: 2px 0 10px rgba(0, 0, 0, 0.5);
+            min-width: 150px;
+            justify-content: center;
+        }
+        
+        .ticker-label::after {
+            content: '';
+            position: absolute;
+            right: -25px;
+            width: 0;
+            height: 0;
+            border-style: solid;
+            border-width: 30px 0 30px 25px;
+            border-color: transparent transparent transparent rgb(220, 20, 60);
+        }
+        
+        .ticker-content {
+            position: absolute;
+            left: 200px;
+            right: 0;
+            height: 100%;
+            display: flex;
+            align-items: center;
+        }
+        
+        .ticker-text {
+            white-space: nowrap;
+            color: rgb(235, 235, 235);
+            font-size: 22px;
+            font-weight: 600;
+            padding-right: 100px;
+            animation: none;
+            will-change: transform;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+        }
+        
+        .ticker-item {
+            display: inline-block;
+            padding: 0 50px;
+            position: relative;
+        }
+        
+        .ticker-item::before {
+            content: '•';
+            position: absolute;
+            left: 20px;
+            color: rgb(220, 20, 60);
+            font-size: 16px;
+        }
+        
+        .ticker-item:first-child::before {
+            display: none;
+        }
+        
+        /* Scrolling animation */
+        .ticker-scrolling .ticker-text {
+            animation: tickerScroll linear infinite;
+        }
+        
+        @keyframes tickerScroll {
+            0% {
+                transform: translateX(100%);
+            }
+            100% {
+                transform: translateX(-100%);
+            }
+        }
+        
+        /* Speed variations */
+        .speed-slow .ticker-text {
+            animation-duration: 60s;
+        }
+        
+        .speed-medium .ticker-text {
+            animation-duration: 40s;
+        }
+        
+        .speed-fast .ticker-text {
+            animation-duration: 25s;
+        }
+        
+        /* Category themes */
+        .ticker-container.breaking {
+            border-top-color: rgb(255, 0, 0);
+        }
+        
+        .ticker-container.breaking .ticker-label {
+            background: rgb(255, 0, 0);
+        }
+        
+        .ticker-container.breaking .ticker-label::after {
+            border-left-color: rgb(255, 0, 0);
+        }
+        
+        .ticker-container.breaking .ticker-item::before {
+            color: rgb(255, 0, 0);
+        }
+        
+        .ticker-container.sports {
+            border-top-color: rgb(76, 175, 80);
+        }
+        
+        .ticker-container.sports .ticker-label {
+            background: rgb(76, 175, 80);
+        }
+        
+        .ticker-container.sports .ticker-label::after {
+            border-left-color: rgb(76, 175, 80);
+        }
+        
+        .ticker-container.sports .ticker-item::before {
+            color: rgb(76, 175, 80);
+        }
+        
+        .ticker-container.finance {
+            border-top-color: rgb(255, 193, 7);
+        }
+        
+        .ticker-container.finance .ticker-label {
+            background: rgb(255, 193, 7);
+            color: rgb(16, 20, 30);
+        }
+        
+        .ticker-container.finance .ticker-label::after {
+            border-left-color: rgb(255, 193, 7);
+        }
+        
+        .ticker-container.finance .ticker-item::before {
+            color: rgb(255, 193, 7);
+        }
+        
+        /* Animation classes */
+        .animate-in .ticker-wrapper {
+            animation: slideUp 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+        }
+        
+        .animate-out .ticker-wrapper {
+            animation: slideDown 0.4s cubic-bezier(0.55, 0.055, 0.675, 0.19) forwards;
+        }
+        
+        @keyframes slideUp {
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+        
+        @keyframes slideDown {
+            to {
+                transform: translateY(100%);
+                opacity: 0;
+            }
+        }
+        
+        /* Time display */
+        .ticker-time {
+            position: absolute;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.5);
+            color: rgb(235, 235, 235);
+            padding: 5px 15px;
+            border-radius: 15px;
+            font-size: 14px;
+            font-weight: 600;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <div class="ticker-wrapper" id="ticker-wrapper">
+        <div class="ticker-container speed-medium" id="ticker-container">
+            <div class="ticker-label" id="ticker-label">ULTIME NOTIZIE</div>
+            <div class="ticker-content">
+                <div class="ticker-text ticker-scrolling" id="ticker-text">
+                    <span class="ticker-item" id="f0">Importante summit internazionale a Roma per discutere il futuro dell'economia europea</span>
+                    <span class="ticker-item" id="f1">Nuovo record per la borsa di Milano: FTSE MIB supera i 30.000 punti</span>
+                    <span class="ticker-item" id="f2">Meteo: previste piogge intense nelle prossime 48 ore al Nord Italia</span>
+                </div>
+            </div>
+            <div class="ticker-time" id="ticker-time">15:42</div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script>
+        // CasparCG Template Functions
+        let isPlaying = false;
+        let scrollInterval = null;
+        
+        const categories = {
+            'news': 'ULTIME NOTIZIE',
+            'breaking': 'ULTIMA ORA',
+            'sports': 'SPORT',
+            'finance': 'ECONOMIA',
+            'weather': 'METEO'
+        };
+
+        function play() {
+            if (isPlaying) return;
+            isPlaying = true;
+            document.body.classList.add('animate-in');
+            document.body.classList.remove('animate-out');
+            
+            // Start scrolling
+            const tickerText = document.getElementById('ticker-text');
+            tickerText.classList.add('ticker-scrolling');
+            
+            // Update time
+            updateTime();
+            scrollInterval = setInterval(updateTime, 60000); // Update every minute
+            
+            console.log('News Ticker: Playing');
+        }
+
+        function stop() {
+            if (!isPlaying) return;
+            isPlaying = false;
+            document.body.classList.remove('animate-in');
+            document.body.classList.add('animate-out');
+            
+            // Stop scrolling
+            const tickerText = document.getElementById('ticker-text');
+            tickerText.classList.remove('ticker-scrolling');
+            
+            // Clear time update
+            if (scrollInterval) {
+                clearInterval(scrollInterval);
+                scrollInterval = null;
+            }
+            
+            console.log('News Ticker: Stopping');
+            
+            setTimeout(() => {
+                document.body.classList.remove('animate-out');
+            }, 500);
+        }
+
+        function update(data) {
+            console.log('News Ticker: Updating', data);
+            
+            // Parse string data if needed
+            if (typeof data === 'string') {
+                try {
+                    data = JSON.parse(data);
+                } catch (e) {
+                    console.error('Failed to parse data:', e);
+                    return;
+                }
+            }
+            
+            // Update ticker items
+            if (data.f0 !== undefined) {
+                document.getElementById('f0').textContent = data.f0;
+            }
+            if (data.f1 !== undefined) {
+                document.getElementById('f1').textContent = data.f1;
+            }
+            if (data.f2 !== undefined) {
+                document.getElementById('f2').textContent = data.f2;
+            }
+            
+            // Update category
+            if (data.f3 !== undefined) {
+                const container = document.getElementById('ticker-container');
+                const label = document.getElementById('ticker-label');
+                
+                // Remove all category classes
+                container.classList.remove('news', 'breaking', 'sports', 'finance', 'weather');
+                
+                // Add new category class
+                const category = data.f3.toLowerCase();
+                if (categories[category]) {
+                    container.classList.add(category);
+                    label.textContent = categories[category];
+                }
+            }
+            
+            // Update speed
+            if (data.f4 !== undefined) {
+                const container = document.getElementById('ticker-container');
+                container.classList.remove('speed-slow', 'speed-medium', 'speed-fast');
+                container.classList.add(`speed-${data.f4}`);
+            }
+            
+            // Update show time
+            if (data.f5 !== undefined) {
+                const timeEl = document.getElementById('ticker-time');
+                timeEl.style.display = data.f5 === 'true' ? 'block' : 'none';
+            }
+            
+            // Recalculate animation duration based on text length
+            adjustScrollSpeed();
+        }
+
+        function next() {
+            console.log('News Ticker: Next');
+        }
+        
+        function updateTime() {
+            const now = new Date();
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            document.getElementById('ticker-time').textContent = `${hours}:${minutes}`;
+        }
+        
+        function adjustScrollSpeed() {
+            const tickerText = document.getElementById('ticker-text');
+            const textLength = tickerText.textContent.length;
+            const container = document.getElementById('ticker-container');
+            
+            // Remove existing speed classes
+            container.classList.remove('speed-slow', 'speed-medium', 'speed-fast');
+            
+            // Set speed based on text length
+            if (textLength < 200) {
+                container.classList.add('speed-fast');
+            } else if (textLength < 400) {
+                container.classList.add('speed-medium');
+            } else {
+                container.classList.add('speed-slow');
+            }
+        }
+
+        // Auto-play on load for testing
+        window.addEventListener('load', () => {
+            console.log('News Ticker Template Loaded');
+            updateTime();
+            adjustScrollSpeed();
+            // Uncomment for auto-preview
+            // setTimeout(play, 500);
+        });
+
+        // Export for CasparCG
+        window.play = play;
+        window.stop = stop;
+        window.update = update;
+        window.next = next;
+    </script>
+</body>
+</html>

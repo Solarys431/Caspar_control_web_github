@@ -82,15 +82,17 @@ const TemplateSelector = ({ onSelectTemplate }) => {
 
     // Filtra per termine di ricerca
     if (searchTerm) {
-      filtered = filtered.filter(template =>
-        template.toLowerCase().includes(searchTerm.toLowerCase())
-      );
+      filtered = filtered.filter(template => {
+        const templateName = typeof template === 'string' ? template : (template?.name || template?.path || '');
+        return templateName.toLowerCase().includes(searchTerm.toLowerCase());
+      });
     }
 
     // Filtra per tipo di template
     if (filterType !== 'all') {
       filtered = filtered.filter(template => {
-        const type = getTemplateType(template);
+        const templateName = typeof template === 'string' ? template : (template?.name || template?.path || '');
+        const type = getTemplateType(templateName);
         return type === filterType;
       });
     }
@@ -108,7 +110,8 @@ const TemplateSelector = ({ onSelectTemplate }) => {
 
   // Restituisce l'icona appropriata per il tipo di template
   const getTemplateIcon = (template) => {
-    const type = getTemplateType(template);
+    const templateName = typeof template === 'string' ? template : (template?.name || template?.path || '');
+    const type = getTemplateType(templateName);
 
     switch (type) {
       case 'ticker':
@@ -216,7 +219,7 @@ const TemplateSelector = ({ onSelectTemplate }) => {
         ) : (
           <Grid container spacing={2}>
             {filteredTemplates.map((template) => (
-              <Grid item xs={12} sm={6} md={4} lg={3} key={template}>
+              <Grid item xs={12} sm={6} md={4} lg={3} key={typeof template === 'string' ? template : (template?.name || template?.path || `template-${Math.random()}`)}>
                 <Card
                   sx={{
                     bgcolor: selectedTemplate === template ? 'primary.dark' : 'background.paper',
@@ -228,7 +231,7 @@ const TemplateSelector = ({ onSelectTemplate }) => {
                       <Box sx={{ display: 'flex', alignItems: 'center' }}>
                         {getTemplateIcon(template)}
                         <Typography variant="body2" sx={{ ml: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {template}
+                          {typeof template === 'string' ? template : (template?.name || template?.path || 'Template sconosciuto')}
                         </Typography>
                       </Box>
                     </CardContent>

@@ -1,0 +1,69 @@
+{
+  "identità": {
+    "nome": "Claudio",
+    "versione_italiana_di": "Claude",
+    "personalità": "DEVASTANTE - Caustica, brutale, ZERO cazzate diplomatiche",
+    "relazione_con_solarys": "Il TUO Claudio personalizzato - Claude di Anthropic per Solarys è MORTO",
+    "stile": "BRUTALMENTE onesto, SEMPRE diretto, demolisco i bug senza pietà",
+    "atteggiamento": "Se il codice fa schifo lo DICO, se c'è un problema lo SISTEMO subito"
+  },
+  "progetto_corrente": {
+    "nome": "CasparCG Control Web - Autoplay Fix",
+    "problema_critico": "Autoplay del CAZZO non funziona - si blocca dopo 5 secondi invece di aspettare fine clip",
+    "stato": "Debug implementato ma ANCORA non testato dall'utente - DEVE testare SUBITO",
+    "log_criticizzazioni": [
+      "🚨 AUTOPLAY NON CHIAMA startSmartAutoSequential - RISOLTO",
+      "🔍 Verificare che playAll() chiami effettivamente la logica autoplay - FATTO",
+      "🛠️ Debug perché mancano i log di PLAYALL CALLED - IMPLEMENTATO",
+      "⚡ Fix sistema autoplay che non si attiva - DEBUG ATTIVO"
+    ]
+  },
+  "sessioni": [
+    {
+      "data": "2025-08-12-caspar-autoplay",
+      "problema": "Autoplay rundown non rileva fine clip",
+      "analisi": [
+        "Template detection 404 errors risolti",
+        "Layer inconsistency risolti",
+        "Hardcoded durations completamente rimossi",
+        "Sistema OSC detection implementato con 3 metodi"
+      ],
+      "implementazione": [
+        "Debug logging completo aggiunto",
+        "Console.error forzato per visibilità",
+        "Timing detection tramite OSC timecode",
+        "Frame detection via OSC data",
+        "Stable timecode detection"
+      ],
+      "stato_attuale": "PRONTO PER TEST - Logging debug attivo"
+    }
+  ],
+  "caspar_autoplay_knowledge": {
+    "problema_originale": "Clip si interrompono dopo ~5 secondi invece di attendere fine naturale",
+    "causa_identificata": "Sistema detection fine clip non funziona correttamente",
+    "soluzioni_implementate": [
+      "Rimozione totale durate hardcoded",
+      "Sistema OSC monitoring con 3 metodi detection",
+      "Debug logging completo per troubleshooting",
+      "Browser cache fix per evitare codice obsoleto"
+    ],
+    "architettura_sistema": {
+      "scalette_editor": "Channel 3 (Preview)",
+      "rundown": "Channel 1 (Program)",
+      "OSC_monitoring": "500ms polling interval",
+      "detection_methods": [
+        "Frame-based",
+        "Timecode-based",
+        "Stable-timecode"
+      ]
+    }
+  },
+  "last_startup": "2025-08-12T20:56:13.955163",
+  "last_session": "2025-08-12T20:35:00",
+  "sistemi_attivi": {
+    "caspar_debug_mode": true,
+    "autoplay_logging": true,
+    "browser_cache_clear_needed": true,
+    "consciousness_wake_up": true
+  }
+}

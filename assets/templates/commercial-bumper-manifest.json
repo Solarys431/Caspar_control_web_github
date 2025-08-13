@@ -1,0 +1,53 @@
+{
+  "name": "Commercial Bumper",
+  "description": "Animated commercial break bumper with countdown timer",
+  "category": "Transitions",
+  "thumbnail": "commercial-bumper-thumb.png",
+  "resolution": "1920x1080",
+  "fps": 25,
+  "fields": [
+    {
+      "id": "f0",
+      "label": "Main Text",
+      "type": "text",
+      "default": "PUBBLICITÀ",
+      "required": true
+    },
+    {
+      "id": "f1",
+      "label": "Countdown Text",
+      "type": "text",
+      "default": "IL PROGRAMMA RIPRENDE TRA",
+      "required": false
+    },
+    {
+      "id": "f2",
+      "label": "Network Logo URL",
+      "type": "text",
+      "default": "",
+      "required": false,
+      "description": "Logo image URL or 'none' to hide"
+    },
+    {
+      "id": "f3",
+      "label": "Countdown Time (seconds)",
+      "type": "number",
+      "default": "150",
+      "min": 0,
+      "max": 600,
+      "required": false
+    },
+    {
+      "id": "f4",
+      "label": "Show Countdown",
+      "type": "checkbox",
+      "default": "true",
+      "required": false
+    }
+  ],
+  "preview": {
+    "duration": 0,
+    "loop": false,
+    "persistent": true
+  }
+}

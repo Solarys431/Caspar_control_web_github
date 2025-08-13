@@ -1,0 +1,36 @@
+{
+  "name": "Lower Third Professional",
+  "description": "Professional lower third template with name, title and optional logo",
+  "category": "Lower Thirds",
+  "thumbnail": "lower-third-thumb.png",
+  "resolution": "1920x1080",
+  "fps": 25,
+  "fields": [
+    {
+      "id": "f0",
+      "label": "Name",
+      "type": "text",
+      "default": "MARIO ROSSI",
+      "required": true
+    },
+    {
+      "id": "f1",
+      "label": "Title",
+      "type": "text",
+      "default": "Direttore Generale",
+      "required": true
+    },
+    {
+      "id": "f2",
+      "label": "Logo URL",
+      "type": "text",
+      "default": "",
+      "required": false,
+      "description": "Logo image URL or 'none' to hide"
+    }
+  ],
+  "preview": {
+    "duration": 5000,
+    "loop": false
+  }
+}

@@ -41,6 +41,9 @@ export const CasparProvider = ({ children }) => {
   const oscUpdateBatchRef = useRef({});
   const oscThrottleTimerRef = useRef(null);
   const lastOscLogTimeRef = useRef(0);
+  // FIX AUTOPLAY: Timer per forzare processing dopo tempo massimo
+  const oscForceProcessTimerRef = useRef(null);
+  const oscBatchStartTimeRef = useRef(null);
 
   const addLog = useCallback((message, level = 'info') => {
     const timestamp = new Date().toLocaleTimeString();
@@ -98,13 +101,35 @@ export const CasparProvider = ({ children }) => {
       ...state
     };
 
+    // FIX AUTOPLAY: Traccia quando inizia il batch
+    if (!oscBatchStartTimeRef.current) {
+      oscBatchStartTimeRef.current = Date.now();
+      
+      // Imposta timer per forzare processing dopo 500ms massimo
+      if (oscForceProcessTimerRef.current) {
+        clearTimeout(oscForceProcessTimerRef.current);
+      }
+      oscForceProcessTimerRef.current = setTimeout(() => {
+        console.log('🔥 [OSC-BATCH] Forzatura processing dopo 500ms');
+        processBatchedOscUpdates();
+        oscBatchStartTimeRef.current = null;
+      }, 500);
+    }
+
     // Clear existing timer
     if (oscThrottleTimerRef.current) {
       clearTimeout(oscThrottleTimerRef.current);
     }
 
-    // Schedule batch processing (200ms throttle)
-    oscThrottleTimerRef.current = setTimeout(processBatchedOscUpdates, 200);
+    // AUTOPLAY FIX: Throttle più veloce per maggiore reattività
+    oscThrottleTimerRef.current = setTimeout(() => {
+      processBatchedOscUpdates();
+      oscBatchStartTimeRef.current = null;
+      if (oscForceProcessTimerRef.current) {
+        clearTimeout(oscForceProcessTimerRef.current);
+        oscForceProcessTimerRef.current = null;
+      }
+    }, 100);
   }, [processBatchedOscUpdates]);
 
   useEffect(() => {
@@ -113,11 +138,14 @@ export const CasparProvider = ({ children }) => {
     addLog(`Tentativo di connessione Socket.IO al backend: ${configuredServerUrl}`);
 
     const newSocket = io(configuredServerUrl, {
-      reconnectionAttempts: 5,
-      reconnectionDelay: 3000,
+      reconnectionAttempts: 20, // 🔥 AUTOPLAY FIX: Più tentativi reconnessione
+      reconnectionDelay: 1000,  // 🔥 AUTOPLAY FIX: Reconnessione più veloce
+      reconnectionDelayMax: 5000,
+      maxReconnectionAttempts: 20,
       timeout: 20000,
-      transports: ['websocket'],
-      autoConnect: true
+      transports: ['websocket', 'polling'], // 🔥 AUTOPLAY FIX: Fallback su polling
+      autoConnect: true,
+      forceNew: false // 🔥 AUTOPLAY FIX: Riusa connessione esistente
     });
     setSocket(newSocket);
 
@@ -128,6 +156,15 @@ export const CasparProvider = ({ children }) => {
 
     newSocket.on('disconnect', (reason) => {
       addLog(`Socket client disconnesso dal server backend: ${reason}`, 'warning');
+      // 🔥 AUTOPLAY FIX: Tentativo reconnessione immediata per autoplay
+      if (reason === 'io server disconnect' || reason === 'transport close') {
+        addLog('🔄 [AUTOPLAY-FIX] Tentativo reconnessione immediata...', 'info');
+        setTimeout(() => {
+          if (!newSocket.connected) {
+            newSocket.connect();
+          }
+        }, 500);
+      }
     });
 
     newSocket.on('connect_error', (err) => {
@@ -201,10 +238,14 @@ export const CasparProvider = ({ children }) => {
     });
 
     newSocket.on('osc:timecode', (data) => {
-      // Aggiorna il timecode per il canale/layer specifico
+      // FIX AUTOPLAY: Usa batching per evitare race conditions
+      const key = `${data.channel}-${data.layer}`;
+      batchOscUpdate(key, { timecode: data });
+      
+      // Aggiorna anche direttamente timecodes per accesso immediato
       setTimecodes(prev => ({
         ...prev,
-        [`${data.channel}-${data.layer}`]: data.time
+        [key]: data.time
       }));
 
       // Log per debug (solo per il canale 3 che è quello di preview)
@@ -302,21 +343,21 @@ export const CasparProvider = ({ children }) => {
     });
 
     newSocket.on('osc:paused', (data) => {
-      // PROBLEMA 1 FIX: Estrai il valore primitivo boolean invece dell'oggetto
+      // FIX AUTOPLAY: Usa batching per evitare race conditions
+      const key = `${data.channel}-${data.layer}`;
       const pausedValue = typeof data.paused === 'boolean' ? data.paused : Boolean(data.paused);
-
-      // Aggiorna lo stato di pausa per il canale/layer specifico
-      setOscData(prev => ({
-        ...prev,
-        [`${data.channel}-${data.layer}`]: {
-          ...prev[`${data.channel}-${data.layer}`],
-          paused: pausedValue // Salva solo il valore boolean
-        }
-      }));
+      
+      // Usa batching invece di update diretto per evitare race conditions
+      batchOscUpdate(key, { 
+        paused: { 
+          ...data, 
+          paused: pausedValue 
+        } 
+      });
 
       // Log per debug OSC data parsing
       if (data.channel === 3) {
-        console.log(`🔧 [OSC FIX] Paused aggiornato per ${data.channel}-${data.layer}: ${pausedValue} (tipo: ${typeof pausedValue})`);
+        console.log(`🔧 [OSC FIX] Paused aggiornato per ${key}: ${pausedValue} (tipo: ${typeof pausedValue})`);
       }
     });
 
@@ -355,6 +396,11 @@ export const CasparProvider = ({ children }) => {
       if (oscThrottleTimerRef.current) {
         clearTimeout(oscThrottleTimerRef.current);
         oscThrottleTimerRef.current = null;
+      }
+      // FIX AUTOPLAY: Cleanup force process timer
+      if (oscForceProcessTimerRef.current) {
+        clearTimeout(oscForceProcessTimerRef.current);
+        oscForceProcessTimerRef.current = null;
       }
       
       newSocket.disconnect();
@@ -508,17 +554,121 @@ export const CasparProvider = ({ children }) => {
     });
   }, [connected, socket, addLog, previewSessionId, activeProfileId]);
 
+  // 🚀 NUOVA FUNZIONE: Ottieni TUTTI i media (assets locali + CasparCG)
+  const getAllMedia = useCallback(async () => {
+    // IMPORTANTE: Permetti di ottenere i file locali anche senza CasparCG connesso!
+    if (!socket) {
+      addLog('Socket non connesso', 'error');
+      return { success: false, media: [], message: 'Socket non connesso' };
+    }
+    
+    // Non richiediamo più che CasparCG sia connesso per vedere i file locali
+    addLog('Richiesta lista completa media (assets locali + CasparCG se connesso) con comando SCAN...');
+    console.log('🔥 CHIAMANDO getAllMedia con comando SCAN, connected:', connected);
+    
+    return new Promise((resolve) => {
+      // 🔥 USA L'ENDPOINT ESISTENTE media:list dalla documentazione
+      socket.emit('media:list', 'all', (response) => {
+        console.log('🔥 MEDIA:LIST RESPONSE:', response);
+        if (response && response.success) {
+          // 🔥 STRUTTURA RESPONSE CORRETTA dalla documentazione:
+          // response.mediaList.caspar = array media CasparCG  
+          // response.mediaList.assets = object con categorie
+          let allMedia = [];
+          
+          // Aggiungi media CasparCG con durate
+          if (response.mediaList && response.mediaList.caspar && Array.isArray(response.mediaList.caspar)) {
+            allMedia = [...response.mediaList.caspar];
+            console.log(`📊 CasparCG media: ${response.mediaList.caspar.length} files con durate`);
+          }
+          
+          // Aggiungi media da assets locali  
+          if (response.mediaList && response.mediaList.assets) {
+            Object.entries(response.mediaList.assets).forEach(([category, files]) => {
+              if (Array.isArray(files)) {
+                // Ogni file ha già la struttura completa dalla documentazione
+                files.forEach(file => {
+                  // Se è già un oggetto completo, usalo così com'è
+                  if (typeof file === 'object' && file.name) {
+                    allMedia.push({
+                      ...file,
+                      isLocal: true,
+                      category: category
+                    });
+                  } else {
+                    // Fallback per stringhe semplici
+                    allMedia.push({
+                      name: file,
+                      type: category.toUpperCase(),
+                      isLocal: true,
+                      category: category
+                    });
+                  }
+                });
+                console.log(`📂 Assets ${category}: ${files.length} files`);
+              }
+            });
+          }
+          
+          setMediaList(allMedia);
+          addLog(`Lista media completa: ${allMedia.length} file totali`);
+          resolve({ success: true, media: allMedia });
+        } else {
+          addLog('Errore recupero lista media completa', 'error');
+          resolve({ success: false, media: [], message: 'Errore recupero media' });
+        }
+      });
+    });
+  }, [socket, addLog]);
+  
   const getMediaList = useCallback(async () => {
     // ... (implementazione invariata, usa sendCommand) ...
     if (!connected) { /* ... */ }
     addLog('Richiesta lista media (CLS)...');
     try {
         const result = await sendCommand('CLS');
-        if (result.success && result.response) {
-          const files = result.response.split('\r\n')
-            .filter(line => line.trim() !== '' && !line.startsWith('200') && !line.startsWith('201') && !line.startsWith('404') && line.length > 0)
-            .map(line => { const match = line.match(/"(.*?)"/); return match ? match[1] : line.trim(); })
-            .filter(Boolean);
+        if (result.success) {
+          // 🎯 USA I DATI PARSATI DAL SERVER SE DISPONIBILI!
+          let files = [];
+          
+          // Se il server ha già parsato i media con durate, usali
+          if (result.parsedMedia) {
+            files = result.parsedMedia;
+            console.log(`📊 CLS RECEIVED: ${files.length} media con durate dal server`);
+            console.log('🔍 RAW parsedMedia:', result.parsedMedia);
+            for (const file of files) {
+              if (file.frames !== undefined && file.duration !== undefined) {
+                const seconds = file.duration / 1000;
+                console.log(`✅ "${file.name}": ${file.frames} frames → ${file.duration}ms (${seconds.toFixed(1)}s)`);
+                if (file.name.includes('NEBULA')) {
+                  console.log(`🎯 NEBULA FOUND: "${file.name}" = ${seconds.toFixed(1)} secondi`);
+                }
+              } else {
+                console.warn(`⚠️ "${file.name || file}": NO DURATION DATA`);
+              }
+            }
+          }
+          // Altrimenti prova a parsare dal JSON response se è una stringa JSON
+          else if (result.response) {
+            try {
+              files = JSON.parse(result.response);
+              console.log(`📊 CLS PARSED from JSON: ${files.length} media`);
+            } catch (e) {
+              // Non è JSON, prova il vecchio parser come fallback
+              console.warn('⚠️ CLS response non è JSON, usando fallback parser');
+              const lines = result.response.split('\r\n');
+              for (const line of lines) {
+                if (line.trim() === '' || line.startsWith('200') || line.startsWith('201') || line.startsWith('404')) {
+                  continue;
+                }
+                const match = line.match(/"(.*?)"/);
+                if (match) {
+                  files.push(match[1]); // Solo stringa come fallback
+                }
+              }
+            }
+          }
+          
           setMediaList(files);
           addLog(`Lista media aggiornata: ${files.length} file.`);
           return { success: true, media: files };
@@ -613,9 +763,31 @@ export const CasparProvider = ({ children }) => {
   const sendControlCommand = useCallback((command, channel, layer, clip, options = {}) => {
     return new Promise((resolve, reject) => {
       if (!socket || !socket.connected) {
-        const msg = 'Impossibile inviare comando di controllo: socket non connesso';
-        addLog(msg, 'error');
-        return reject(new Error(msg));
+        // 🔥 AUTOPLAY FIX: Tentativo reconnessione automatica
+        const msg = 'Socket non connesso - tentativo reconnessione automatica...';
+        addLog(msg, 'warning');
+        
+        if (socket && !socket.connected) {
+          socket.connect();
+          // Ritenta dopo breve pausa
+          setTimeout(() => {
+            if (socket && socket.connected) {
+              // Ripeti la chiamata se connesso
+              sendControlCommand(command, channel, layer, clip, options)
+                .then(resolve)
+                .catch(reject);
+            } else {
+              const errorMsg = 'Impossibile inviare comando di controllo: socket non connesso dopo reconnessione';
+              addLog(errorMsg, 'error');
+              reject(new Error(errorMsg));
+            }
+          }, 1000);
+          return;
+        } else {
+          const errorMsg = 'Impossibile inviare comando di controllo: socket non disponibile';
+          addLog(errorMsg, 'error');
+          return reject(new Error(errorMsg));
+        }
       }
 
       addLog(`Invio comando di controllo ${command} a ${channel}-${layer}${clip ? ` (${clip})` : ''}`, 'info');
@@ -727,6 +899,7 @@ export const CasparProvider = ({ children }) => {
     sendCommand,
     sendControlCommand, // Esponi la nuova funzione di controllo prioritario
     getMediaList,
+    getAllMedia, // 🚀 NUOVA: Ottieni media completi (assets + CasparCG)
     getTemplateList,
     fetchManifest,
     play, pause, resume, stop, loadbg, clear, // Aggiungi pause e resume

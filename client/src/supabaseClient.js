@@ -1,25 +1,23 @@
 /**
  * Client Supabase per l'integrazione con il backend
  * 
- * Questo file inizializza il client Supabase con l'URL e la chiave anonima
- * definiti nelle variabili d'ambiente.
+ * Questo file inizializza il client Supabase con configurazione dinamica
+ * che supporta modalità cloud e locale.
  */
 import { createClient } from '@supabase/supabase-js';
+import { supabaseConfig } from './config/supabaseConfig';
 
-// Ottieni le variabili d'ambiente
-const supabaseUrl = process.env.REACT_APP_SUPABASE_URL;
-const supabaseAnonKey = process.env.REACT_APP_SUPABASE_ANON_KEY;
-
-// Verifica che le variabili d'ambiente siano definite
-if (!supabaseUrl || !supabaseAnonKey) {
+// Verifica che la configurazione sia valida
+if (!supabaseConfig.url || !supabaseConfig.anonKey) {
   console.error(
-    'Errore: Variabili d\'ambiente Supabase mancanti. ' +
-    'Assicurati di aver definito REACT_APP_SUPABASE_URL e REACT_APP_SUPABASE_ANON_KEY ' +
-    'nel file .env o .env.local'
+    'Errore: Configurazione Supabase non valida. ' +
+    `Modalità: ${supabaseConfig.mode}, URL: ${supabaseConfig.url}`
   );
 }
 
-// Crea il client Supabase
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+// Crea il client Supabase con la configurazione dinamica
+const supabase = createClient(supabaseConfig.url, supabaseConfig.anonKey);
+
+console.log(`✅ Supabase client inizializzato in modalità ${supabaseConfig.mode}`);
 
 export default supabase;

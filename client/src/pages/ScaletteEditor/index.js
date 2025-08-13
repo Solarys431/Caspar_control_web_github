@@ -65,7 +65,7 @@ import { broadcastComponents, broadcastColors, broadcastAnimations } from '../..
  */
 const ScaletteEditor = () => {
   // Accesso al contesto CasparCG
-  const { connected, getMediaList, getTemplateList, cgAdd, sendCommand } = useContext(CasparContext);
+  const { connected, getAllMedia, getTemplateList, cgAdd, sendCommand } = useContext(CasparContext); // 🔥 USANDO getAllMedia per assets + CasparCG
 
   // Accesso al contesto Rundown
   const rundownContext = useRundown();
@@ -285,11 +285,10 @@ const ScaletteEditor = () => {
 
   // Effetto per caricare le liste di media e template all'avvio
   useEffect(() => {
-    if (connected) {
-      if (typeof getMediaList === 'function') getMediaList();
-      if (typeof getTemplateList === 'function') getTemplateList();
-    }
-  }, [connected, getMediaList, getTemplateList]);
+    // 🔥 CARICA SEMPRE assets locali, CasparCG se connesso
+    if (typeof getAllMedia === 'function') getAllMedia();
+    if (connected && typeof getTemplateList === 'function') getTemplateList();
+  }, [connected, getAllMedia, getTemplateList]);
 
   // Funzione per gestire la selezione di un template
   const handleSelectTemplate = async (template) => {
@@ -493,7 +492,24 @@ const ScaletteEditor = () => {
     const outPointField = document.getElementById('outPointField');
 
     const inPoint = inPointField ? inPointField.value : '00:00:00:00';
-    const outPoint = outPointField ? outPointField.value : '00:03:30:00';
+    const outPoint = outPointField ? outPointField.value : '';
+
+    // 🎯 DURATA REALE dal CLS o dalla media info
+    let realDuration = null;
+    if (previewPlayer.previewMedia && typeof previewPlayer.previewMedia === 'object') {
+      if (previewPlayer.previewMedia.duration) {
+        // Se duration è in millisecondi, convertilo in HH:MM:SS
+        const ms = previewPlayer.previewMedia.duration;
+        const seconds = Math.floor(ms / 1000);
+        const minutes = Math.floor(seconds / 60);
+        const hours = Math.floor(minutes / 60);
+        const remainingMinutes = minutes % 60;
+        const remainingSeconds = seconds % 60;
+        realDuration = `${String(hours).padStart(2, '0')}:${String(remainingMinutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
+        
+        console.log(`📊 SCALETTA DURATION: "${mediaPath}" = ${realDuration} (${ms}ms)`);
+      }
+    }
 
     const mediaData = {
       clip: mediaPath,
@@ -503,9 +519,9 @@ const ScaletteEditor = () => {
         ? previewPlayer.previewMedia.split('/').pop()
         : previewPlayer.previewMedia.name,
       startTime: '00:00:00',
-      duration: outPoint,
+      duration: realDuration || outPoint, // USA DURATA REALE, outPoint solo se manuale
       inPoint: inPoint,
-      outPoint: outPoint,
+      outPoint: outPoint || realDuration, // Se non c'è outPoint, usa la durata
       location: `CH${previewChannel}-L1`,
       notes: ''
     };
@@ -560,7 +576,7 @@ const ScaletteEditor = () => {
         ? previewPlayer.previewTemplate.split('/').pop()
         : previewPlayer.previewTemplate.name,
       startTime: '00:00:00',
-      duration: '00:01:00',
+      duration: '', // Nessuna durata di default per template
       location: `CH${previewChannel}-L20`,
       notes: '',
       autoRemove: false

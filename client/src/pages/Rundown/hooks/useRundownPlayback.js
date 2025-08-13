@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useCaspar } from '../../../contexts/CasparContext'; // Assicurati che il percorso sia corretto
 import { useRundown } from '../../../contexts/RundownContext'; // Assicurati che il percorso sia corretto
 
@@ -23,6 +23,10 @@ const useRundownPlayback = () => {
   const {
     updateItemPlayingStatus,
   } = useRundown();
+
+  // 🔥 TRACKING SYSTEM - Mappa per tracciare configurazioni template attivi per item
+  // Formato: Map(itemId -> { templateName, channel, layer, cgLayer, data })
+  const [activeTemplateConfigs, setActiveTemplateConfigs] = useState(new Map());
 
   /**
    * Riproduce un elemento di tipo MEDIA.
@@ -59,6 +63,7 @@ const useRundownPlayback = () => {
               return;
             }
             if (typeof addLog === 'function') addLog(`PLAYBACK_HOOK: Invio CG ADD per template annidato "${linked.name || linked.template}" su ${linked.channel}-${linked.layer} (CG: ${linked.cgLayer})`, 'info');
+            
             // Comando CG ADD per il template collegato
             await casparCgAdd(
               linked.channel, linked.layer, linked.cgLayer,
@@ -66,6 +71,22 @@ const useRundownPlayback = () => {
               linked.playOnLoad !== undefined ? linked.playOnLoad : true, // Riproduci al caricamento o meno
               linked.data || {} // Dati per il template
             );
+
+            // 🔥 SALVA configurazione linkedTemplate per STOP/REMOVE successivi
+            const linkedTemplateKey = `${item.id}_linkedTemplate`;
+            setActiveTemplateConfigs(prev => {
+              const newMap = new Map(prev);
+              newMap.set(linkedTemplateKey, {
+                templateName: linked.template,
+                channel: linked.channel,
+                layer: linked.layer,
+                cgLayer: linked.cgLayer,
+                data: linked.data || {}
+              });
+              return newMap;
+            });
+            if (typeof addLog === 'function') addLog(`PLAYBACK_HOOK: LinkedTemplate config salvata con chiave "${linkedTemplateKey}".`, 'info');
+
             // Se playOnLoad è false, invia un comando CG PLAY separato
             if (linked.playOnLoad === false) {
               if (typeof addLog === 'function') addLog(`PLAYBACK_HOOK: Invio CG PLAY per template annidato "${linked.name}" (playOnLoad: false)`, 'info');
@@ -108,17 +129,49 @@ const useRundownPlayback = () => {
       // Gestione del template collegato, se presente
       if (item.data.linkedTemplate && item.data.linkedTemplate.template) {
         const linked = item.data.linkedTemplate;
-        if (typeof addLog === 'function') addLog(`PLAYBACK_HOOK: Gestione take out template annidato "${linked.name || linked.template}" per "${item.name}". Dati: ${JSON.stringify(linked)}`, 'debug');
+        const linkedTemplateKey = `${item.id}_linkedTemplate`;
+        
+        if (typeof addLog === 'function') addLog(`PLAYBACK_HOOK: Gestione take out template annidato "${linked.name || linked.template}" per "${item.name}".`, 'debug');
+        
         try {
-          if (!linked.channel || !linked.layer || !linked.cgLayer) {
+          // 🔥 RECUPERA configurazione linkedTemplate salvata in precedenza
+          const savedLinkedConfig = activeTemplateConfigs.get(linkedTemplateKey);
+          
+          let channel, layer, cgLayer, templateName;
+          
+          if (savedLinkedConfig) {
+            // Usa la configurazione salvata durante ADD (METODO SICURO)
+            channel = savedLinkedConfig.channel;
+            layer = savedLinkedConfig.layer;
+            cgLayer = savedLinkedConfig.cgLayer;
+            templateName = savedLinkedConfig.templateName;
+            if (typeof addLog === 'function') addLog(`PLAYBACK_HOOK: Usando configurazione salvata per linkedTemplate "${linkedTemplateKey}": ${channel}-${layer}-${cgLayer}`, 'info');
+          } else {
+            // Fallback ai valori dell'item (METODO ORIGINALE)
+            channel = linked.channel;
+            layer = linked.layer;
+            cgLayer = linked.cgLayer;
+            templateName = linked.template;
+            if (typeof addLog === 'function') addLog(`PLAYBACK_HOOK: ATTENZIONE - Nessuna configurazione salvata per linkedTemplate "${linkedTemplateKey}", uso valori originali: ${channel}-${layer}-${cgLayer}`, 'warning');
+          }
+
+          if (!channel || !layer || !cgLayer) {
             if (typeof addLog === 'function') addLog(`PLAYBACK_HOOK: ERRORE - Parametri mancanti per CG STOP/REMOVE del template annidato "${linked.name || linked.template}".`, 'error');
           } else {
             // Comandi CG STOP e CG REMOVE per il template collegato
-            if (typeof addLog === 'function') addLog(`PLAYBACK_HOOK: Invio CG STOP per template annidato "${linked.name}" su ${linked.channel}-${linked.layer} (CG: ${linked.cgLayer})`, 'info');
-            await casparCgStop(linked.channel, linked.layer, linked.cgLayer);
+            if (typeof addLog === 'function') addLog(`PLAYBACK_HOOK: Invio CG STOP per template annidato "${linked.name}" su ${channel}-${layer} (CG: ${cgLayer})`, 'info');
+            await casparCgStop(channel, layer, cgLayer);
             
-            if (typeof addLog === 'function') addLog(`PLAYBACK_HOOK: Invio CG REMOVE per template annidato "${linked.name}" su ${linked.channel}-${linked.layer} (CG: ${linked.cgLayer})`, 'info');
-            await casparCgRemove(linked.channel, linked.layer, linked.cgLayer);
+            if (typeof addLog === 'function') addLog(`PLAYBACK_HOOK: Invio CG REMOVE per template annidato "${linked.name}" su ${channel}-${layer} (CG: ${cgLayer})`, 'info');
+            await casparCgRemove(channel, layer, cgLayer);
+
+            // 🔥 RIMUOVI configurazione linkedTemplate dopo REMOVE
+            setActiveTemplateConfigs(prev => {
+              const newMap = new Map(prev);
+              newMap.delete(linkedTemplateKey);
+              return newMap;
+            });
+            if (typeof addLog === 'function') addLog(`PLAYBACK_HOOK: LinkedTemplate config rimossa con chiave "${linkedTemplateKey}".`, 'info');
           }
         } catch (templateError) {
           console.error(`PLAYBACK_HOOK: Errore stop/remove template annidato ${linked.template}:`, templateError);
@@ -142,23 +195,44 @@ const useRundownPlayback = () => {
       return false;
     }
     try {
-      if (typeof addLog === 'function') addLog(`PLAYBACK_HOOK: Invio CG ADD per template principale "${item.name}" su ${item.data.channel}-${item.data.layer}-${item.data.cgLayer}`, 'info');
+      const channel = item.data.channel || 1;
+      const layer = item.data.layer || 20; // Layer video predefinito per i template
+      const cgLayer = item.data.cgLayer || 1; // Layer grafico (CG layer)
+      const templateName = item.data.template; // Nome del template
+      const templateData = item.data.data || {}; // Dati del template
+
+      if (typeof addLog === 'function') addLog(`PLAYBACK_HOOK: Invio CG ADD per template principale "${item.name}" su ${channel}-${layer}-${cgLayer}`, 'info');
+      
       // Comando CG ADD per il template
       await casparCgAdd(
-        item.data.channel || 1,
-        item.data.layer || 20, // Layer video predefinito per i template
-        item.data.cgLayer || 1,  // Layer grafico (CG layer)
-        item.data.template,      // Nome del template
+        channel,
+        layer,
+        cgLayer,
+        templateName,
         item.data.playOnLoad !== undefined ? item.data.playOnLoad : true,
-        item.data.data || {}     // Dati del template (F0, F1, etc.)
+        templateData
       );
+
+      // 🔥 SALVA configurazione template attivo per STOP/REMOVE successivi
+      setActiveTemplateConfigs(prev => {
+        const newMap = new Map(prev);
+        newMap.set(item.id, {
+          templateName,
+          channel,
+          layer,
+          cgLayer,
+          data: templateData
+        });
+        return newMap;
+      });
+
       updateItemPlayingStatus(item.id, true);
-      if (typeof addLog === 'function') addLog(`PLAYBACK_HOOK: Template "${item.name}" aggiunto e marcato come in riproduzione. PlayOnLoad: ${item.data.playOnLoad}`);
+      if (typeof addLog === 'function') addLog(`PLAYBACK_HOOK: Template "${item.name}" aggiunto e marcato come in riproduzione. PlayOnLoad: ${item.data.playOnLoad}. Config salvata per tracking.`);
 
       // Se playOnLoad è false, invia un comando CG PLAY separato
       if (item.data.playOnLoad === false) {
         if (typeof addLog === 'function') addLog(`PLAYBACK_HOOK: Invio CG PLAY per template "${item.name}" (playOnLoad: false)`, 'info');
-        await casparCgPlay(item.data.channel || 1, item.data.layer || 20, item.data.cgLayer || 1);
+        await casparCgPlay(channel, layer, cgLayer);
       }
       return true;
     } catch (error) {
@@ -179,28 +253,52 @@ const useRundownPlayback = () => {
       return false;
     }
     try {
-      if (typeof addLog === 'function') addLog(`PLAYBACK_HOOK: Invio CG STOP per template principale "${item.name}" su ${item.data.channel}-${item.data.layer}-${item.data.cgLayer}`, 'info');
+      // 🔥 RECUPERA configurazione template attivo salvata in precedenza
+      const savedConfig = activeTemplateConfigs.get(item.id);
+      
+      let channel, layer, cgLayer, templateName;
+      
+      if (savedConfig) {
+        // Usa la configurazione salvata durante ADD (METODO SICURO)
+        channel = savedConfig.channel;
+        layer = savedConfig.layer;
+        cgLayer = savedConfig.cgLayer;
+        templateName = savedConfig.templateName;
+        if (typeof addLog === 'function') addLog(`PLAYBACK_HOOK: Usando configurazione salvata per template "${item.name}": ${channel}-${layer}-${cgLayer}`, 'info');
+      } else {
+        // Fallback ai valori dell'item (METODO ORIGINALE)
+        channel = item.data.channel || 1;
+        layer = item.data.layer || 20;
+        cgLayer = item.data.cgLayer || 1;
+        templateName = item.data.template;
+        if (typeof addLog === 'function') addLog(`PLAYBACK_HOOK: ATTENZIONE - Nessuna configurazione salvata per template "${item.name}", uso valori item: ${channel}-${layer}-${cgLayer}`, 'warning');
+      }
+
+      if (typeof addLog === 'function') addLog(`PLAYBACK_HOOK: Invio CG STOP per template principale "${item.name}" su ${channel}-${layer}-${cgLayer}`, 'info');
+      
       // Comando CG STOP per il template
-      await casparCgStop(
-        item.data.channel || 1,
-        item.data.layer || 20,
-        item.data.cgLayer || 1
-      );
-      // Decommentare la riga seguente se si desidera rimuovere il template dalla scena dopo lo stop.
-      // Assicurarsi che casparCgRemove sia nelle dipendenze di useCallback se decommentato.
-      // if (typeof addLog === 'function') addLog(`PLAYBACK_HOOK: Invio CG REMOVE per template principale "${item.name}"`, 'info');
-      // await casparCgRemove(item.data.channel || 1, item.data.layer || 20, item.data.cgLayer || 1);
+      await casparCgStop(channel, layer, cgLayer);
+      
+      // Comando CG REMOVE per rimuovere completamente il template dalla scena
+      if (typeof addLog === 'function') addLog(`PLAYBACK_HOOK: Invio CG REMOVE per template principale "${item.name}" su ${channel}-${layer}-${cgLayer}`, 'info');
+      await casparCgRemove(channel, layer, cgLayer);
+      
+      // 🔥 RIMUOVI configurazione salvata dopo REMOVE
+      setActiveTemplateConfigs(prev => {
+        const newMap = new Map(prev);
+        newMap.delete(item.id);
+        return newMap;
+      });
       
       updateItemPlayingStatus(item.id, false);
-      if (typeof addLog === 'function') addLog(`PLAYBACK_HOOK: Template "${item.name}" fermato e marcato come non in riproduzione.`);
+      if (typeof addLog === 'function') addLog(`PLAYBACK_HOOK: Template "${item.name}" fermato, rimosso e marcato come non in riproduzione. Config rimossa dal tracking.`);
       return true;
     } catch (error) {
       console.error(`PLAYBACK_HOOK: Errore nell'arresto del template "${item.name}":`, error);
       if (typeof addLog === 'function') addLog(`Errore arresto template ${item.name}: ${error.message}`, 'error');
       return false;
     }
-    // CORREZIONE: Rimosso casparCgRemove dall'array di dipendenze perché la sua chiamata è commentata.
-  }, [casparCgStop, updateItemPlayingStatus, addLog]);
+  }, [casparCgStop, casparCgRemove, updateItemPlayingStatus, addLog, activeTemplateConfigs]);
 
   /**
    * Aggiorna i dati di un elemento TEMPLATE già in scena.

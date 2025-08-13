@@ -163,24 +163,30 @@ const RundownHeader = ({
 
   // LOOP AUTOMATICO: Riproduzione completa rundown con loop automatico
   const handlePlayAllWithLoop = async () => {
+    console.log('🔴 [AUTOLOOP-HEADER] Clicked Auto Loop button!');
+    console.log('🔴 [AUTOLOOP-HEADER] connected:', connected, 'items.length:', items.length);
+    
     if (!connected || items.length === 0) {
+      console.log('🔴 [AUTOLOOP-HEADER] Early return - no connection or items');
       showNotification('Nessun elemento da riprodurre o non connesso a CasparCG', 'warning');
       return;
     }
 
     try {
-      console.log('Avvio riproduzione automatica con LOOP per', items.length, 'elementi');
+      console.log('🔴 [AUTOLOOP-HEADER] Starting autoplay with LOOP for', items.length, 'elements');
 
       // Avvia la riproduzione sequenziale con loop
       if (playAllWithLoop) {
+        console.log('🔴 [AUTOLOOP-HEADER] Calling playAllWithLoop()...');
         await playAllWithLoop();
-        console.log('Riproduzione automatica con loop avviata con successo');
+        console.log('🔴 [AUTOLOOP-HEADER] playAllWithLoop() completed successfully');
         showNotification('Riproduzione automatica con LOOP INFINITO avviata', 'success');
       } else {
+        console.log('🔴 [AUTOLOOP-HEADER] ERROR: playAllWithLoop function not available!');
         throw new Error('Funzione playAllWithLoop non disponibile');
       }
     } catch (error) {
-      console.error('Errore nella riproduzione automatica con loop:', error);
+      console.error('🔴 [AUTOLOOP-HEADER] ERROR in autoloop:', error);
       showNotification(`Errore nell'avvio della riproduzione con loop: ${error.message}`, 'error');
     }
   };

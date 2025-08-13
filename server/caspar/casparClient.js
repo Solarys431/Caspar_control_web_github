@@ -421,14 +421,13 @@ class CasparClient extends EventEmitter {
             if (!dataLinesStarted) {
                 if (trimmedLine.match(new RegExp(`^\\d{3}\\s+${commandName}\\s+OK`, "i")) ||
                     (commandName === "VERSION" && trimmedLine.match(/^\d{3}\s+VERSION\s+OK/i))) {
-                    dataLinesStarted = true; // Indica che la linea di stato iniziale è stata vista
+                    dataLinesStarted = true;
                     this._log(`Linea di stato OK iniziale trovata per ${commandName}: "${trimmedLine}"`, 'debug');
                 }
-                // Non aggiungere la linea di stato OK iniziale alla lista degli item
                 continue;
             }
 
-            // Ignora codici di stato finali (es. 201 OK) se stiamo già processando dati
+            // Ignora codici di stato finali
             if (trimmedLine.match(/^\d{3}\s+.*OK$/i) && items.length > 0) {
                 this._log(`Trovata linea di stato finale OK per ${commandName}: "${trimmedLine}", ignoro.`, 'debug');
                 continue;
@@ -442,25 +441,137 @@ class CasparClient extends EventEmitter {
                 continue;
             }
 
-            // Se siamo qui, è una linea di dati o la stringa della versione
-            const match = trimmedLine.match(/"(.*?)"/);
-            if (match && match[1]) {
-                items.push(match[1]);
-                this._log(`Item ${commandName} (con virgolette) aggiunto: "${match[1]}"`, 'trace');
-            } else if (trimmedLine.length > 0 && !trimmedLine.match(/^\d{3}/)) {
-                const potentialItem = trimmedLine.split(' ')[0]; // Prendi la prima "parola"
-                items.push(potentialItem);
-                this._log(`Item ${commandName} (senza virgolette/fallback) aggiunto: "${potentialItem}"`, 'trace');
+            // NUOVO PARSER per CLS che estrae TUTTI i dati inclusa DURATA
+            if (commandName === "CLS") {
+                // Formato: "filename" type size date duration
+                // Esempio: "AMB" MOVIE 6445816 20090101010000 160000
+                const clsMatch = trimmedLine.match(/"([^"]+)"\s+(\w+)\s+(\d+)\s+(\d+)\s+(\d+)/);
+                if (clsMatch) {
+                    const [, filename, type, size, date, duration] = clsMatch;
+                    // Converti duration da frames a millisecondi (assumendo 25fps)
+                    const durationMs = Math.round((parseInt(duration) / 25) * 1000);
+                    const item = {
+                        name: filename,
+                        type: type,
+                        size: parseInt(size),
+                        date: date,
+                        frames: parseInt(duration),
+                        duration: durationMs,
+                        durationFormatted: this._formatDuration(durationMs)
+                    };
+                    items.push(item);
+                    this._log(`CLS item con durata: ${filename} = ${item.durationFormatted} (${duration} frames)`, 'info');
+                } else {
+                    // Fallback per formato non standard
+                    const match = trimmedLine.match(/"(.*?)"/);
+                    if (match && match[1]) {
+                        items.push({ name: match[1], duration: 0 });
+                    }
+                }
+            } else {
+                // Parser originale per TLS e altri comandi
+                const match = trimmedLine.match(/"(.*?)"/);
+                if (match && match[1]) {
+                    items.push(match[1]);
+                    this._log(`Item ${commandName} (con virgolette) aggiunto: "${match[1]}"`, 'trace');
+                } else if (trimmedLine.length > 0 && !trimmedLine.match(/^\d{3}/)) {
+                    const potentialItem = trimmedLine.split(' ')[0];
+                    items.push(potentialItem);
+                    this._log(`Item ${commandName} (senza virgolette/fallback) aggiunto: "${potentialItem}"`, 'trace');
+                }
             }
         }
         this._log(`${commandName} trovati: ${items.length}.`, 'debug');
         return items;
     }
 
+    _formatDuration(ms) {
+        const seconds = Math.floor(ms / 1000);
+        const minutes = Math.floor(seconds / 60);
+        const hours = Math.floor(minutes / 60);
+        const remainingMinutes = minutes % 60;
+        const remainingSeconds = seconds % 60;
+        
+        if (hours > 0) {
+            return `${hours}:${String(remainingMinutes).padStart(2, '0')}:${String(remainingSeconds).padStart(2, '0')}`;
+        }
+        return `${minutes}:${String(remainingSeconds).padStart(2, '0')}`;
+    }
+
     async getMediaList() {
         this._log('Recupero lista media con CLS...');
         const rawResponse = await this.sendCommand('CLS');
-        return this._parseClsTlsResponse(rawResponse, "CLS");
+        const items = this._parseClsTlsResponse(rawResponse, "CLS");
+        
+        // Per ogni media, proviamo a ottenere info più dettagliate con CINF
+        // Nota: questo può essere lento per molti file, quindi è opzionale
+        // e dovrebbe essere usato solo se necessario
+        /*
+        for (let item of items) {
+            if (item.name && item.type === 'MOVIE') {
+                try {
+                    const cinfResponse = await this.sendCommand(`CINF "${item.name}"`);
+                    // Il parsing di CINF dovrebbe fornire durata più accurata
+                    this._log(`CINF response for ${item.name}: ${cinfResponse}`, 'debug');
+                } catch (err) {
+                    this._log(`CINF failed for ${item.name}: ${err.message}`, 'warning');
+                }
+            }
+        }
+        */
+        
+        return items;
+    }
+    
+    // Nuovo metodo per ottenere info dettagliate di un singolo file
+    async getMediaInfo(filename) {
+        this._log(`Recupero info dettagliate per ${filename} con CINF...`);
+        try {
+            const rawResponse = await this.sendCommand(`CINF "${filename}"`);
+            return this._parseCinfResponse(rawResponse, filename);
+        } catch (err) {
+            this._log(`CINF fallito per ${filename}: ${err.message}`, 'error');
+            return null;
+        }
+    }
+    
+    // Parser per la risposta CINF
+    _parseCinfResponse(rawResponse, filename) {
+        this._log(`Parsing CINF response per ${filename}`, 'debug');
+        this._log(`Raw CINF response:\n${rawResponse}`, 'trace');
+        
+        // CINF restituisce info in formato XML o strutturato
+        // Esempio tipico: durata, frame rate, codec, etc.
+        // TODO: Implementare parsing completo quando avremo il formato esatto
+        
+        const info = {
+            name: filename,
+            rawResponse: rawResponse
+        };
+        
+        // Prova a estrarre durata e frames dal response
+        // Formato tipico potrebbe includere nb-frames, duration, fps
+        const framesMatch = rawResponse.match(/nb-frames[:\s]+(\d+)/i);
+        const durationMatch = rawResponse.match(/duration[:\s]+([\d.]+)/i);
+        const fpsMatch = rawResponse.match(/fps[:\s]+([\d.]+)/i);
+        
+        if (framesMatch) {
+            info.frames = parseInt(framesMatch[1]);
+        }
+        if (durationMatch) {
+            info.durationSeconds = parseFloat(durationMatch[1]);
+            info.duration = Math.round(info.durationSeconds * 1000);
+        }
+        if (fpsMatch) {
+            info.fps = parseFloat(fpsMatch[1]);
+        }
+        
+        // Se abbiamo frames e fps, calcoliamo la durata
+        if (info.frames && info.fps && !info.duration) {
+            info.duration = Math.round((info.frames / info.fps) * 1000);
+        }
+        
+        return info;
     }
 
     async getTemplateList() {

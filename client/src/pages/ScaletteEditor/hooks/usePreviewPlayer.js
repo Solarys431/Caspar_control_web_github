@@ -25,6 +25,9 @@ const usePreviewPlayer = (previewChannel = 3) => {
   const [previewMedia, setPreviewMedia] = useState(null);
   const [previewTemplate, setPreviewTemplate] = useState(null);
   const [previewExpanded, setPreviewExpanded] = useState(false);
+  
+  // 🔥 TRACKING TEMPLATE ATTIVO per evitare layer inconsistenti
+  const [activeTemplateConfig, setActiveTemplateConfig] = useState(null);
   const [previewSession, setPreviewSession] = useState(null);
 
   // Stati per le informazioni di playback
@@ -263,6 +266,14 @@ const usePreviewPlayer = (previewChannel = 3) => {
     let templateConfig = null;
     let layer = options.layer || 10; // Layer di default
     let cgLayer = options.cgLayer || 1; // CG Layer di default
+    
+    // 🔥 FIX: Per STOP/REMOVE usa configurazione del template attivo se disponibile
+    if ((action === 'cgStop' || action === 'cgClear') && activeTemplateConfig && !options.layer) {
+      layer = activeTemplateConfig.layer;
+      cgLayer = activeTemplateConfig.cgLayer;
+      templateToUse = activeTemplateConfig.templateName;
+      console.log(`🔥 Usando configurazione template attivo per ${action}:`, { layer, cgLayer, template: templateToUse });
+    }
 
     // Se abbiamo un elemento selezionato, prova a estrarre il template da lì
     if (!templateToUse && selectedItem) {
@@ -338,6 +349,16 @@ const usePreviewPlayer = (previewChannel = 3) => {
             console.log(`Invio comando CG ADD: ${command}`);
             console.log(`Template: ${templateName}, Data: ${dataToSend}`);
             await sendCommand(command, commandOptions);
+            
+            // 🔥 SALVA configurazione template attivo per STOP/REMOVE successivi
+            setActiveTemplateConfig({
+              templateName,
+              channel,
+              layer,
+              cgLayer,
+              data: templateData
+            });
+            console.log(`🔥 Template attivo salvato:`, { templateName, channel, layer, cgLayer });
           }
           break;
 
@@ -375,6 +396,10 @@ const usePreviewPlayer = (previewChannel = 3) => {
             const command = `CG ${channel}-${layer} REMOVE ${cgLayer}`;
             console.log(`Invio comando CG REMOVE: ${command} (Template: ${templateName})`);
             await sendCommand(command, commandOptions);
+            
+            // 🔥 PULISCI configurazione template attivo
+            setActiveTemplateConfig(null);
+            console.log(`🔥 Configurazione template attivo pulita dopo REMOVE`);
           }
           break;
 
@@ -725,6 +750,7 @@ const usePreviewPlayer = (previewChannel = 3) => {
     previewSession, // Aggiungiamo le informazioni sulla sessione di preview
     previewChannel: actualPreviewChannel, // Canale di preview effettivo
     previewLayer: actualPreviewLayer, // Layer di preview effettivo
+    activeTemplateConfig, // 🔥 Stato template attivo per debugging
     setPreviewMedia,
     setPreviewTemplate,
     setPreviewExpanded,

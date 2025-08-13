@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=1920, height=1080">
+    <title>Sports Scoreboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            width: 1920px;
+            height: 1080px;
+            background: transparent;
+            font-family: 'Arial Black', 'Arial', sans-serif;
+            overflow: hidden;
+            position: relative;
+            -webkit-font-smoothing: antialiased;
+        }
+        
+        .scoreboard {
+            position: absolute;
+            top: 54px; /* 5% from top - safe area */
+            left: 192px; /* 10% from left - safe area */
+            width: 500px;
+            height: 140px;
+            opacity: 0;
+            transform: scale(0) rotate(-5deg);
+        }
+        
+        .scoreboard-container {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, 
+                rgba(16, 20, 30, 0.95) 0%, 
+                rgba(30, 35, 45, 0.95) 100%);
+            border: 3px solid rgb(0, 188, 212);
+            border-radius: 15px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7),
+                        inset 0 2px 4px rgba(0, 188, 212, 0.3);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        
+        .match-header {
+            background: rgba(0, 188, 212, 0.15);
+            padding: 8px 20px;
+            border-bottom: 1px solid rgba(0, 188, 212, 0.3);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .competition-name {
+            color: rgb(0, 188, 212);
+            font-size: 14px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        
+        .match-time {
+            color: rgb(235, 235, 235);
+            font-size: 14px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .time-indicator {
+            width: 8px;
+            height: 8px;
+            background: rgb(76, 175, 80);
+            border-radius: 50%;
+            animation: blink 2s ease-in-out infinite;
+        }
+        
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        
+        .scores-container {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 15px 20px;
+        }
+        
+        .team {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .team-name {
+            color: rgb(235, 235, 235);
+            font-size: 20px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+            opacity: 0;
+            transform: translateY(-10px);
+        }
+        
+        .team-score {
+            font-size: 48px;
+            font-weight: 900;
+            color: rgb(0, 188, 212);
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8),
+                         0 0 20px rgba(0, 188, 212, 0.5);
+            opacity: 0;
+            transform: scale(0);
+        }
+        
+        .vs-separator {
+            color: rgba(235, 235, 235, 0.5);
+            font-size: 24px;
+            font-weight: 700;
+            margin: 0 20px;
+            opacity: 0;
+        }
+        
+        /* Score update animation */
+        .score-update {
+            animation: scoreFlash 0.5s ease-out;
+        }
+        
+        @keyframes scoreFlash {
+            0% { 
+                transform: scale(1.3);
+                color: rgb(255, 235, 59);
+            }
+            100% { 
+                transform: scale(1);
+                color: rgb(0, 188, 212);
+            }
+        }
+        
+        /* Winner highlight */
+        .team.winner .team-score {
+            color: rgb(76, 175, 80);
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8),
+                         0 0 30px rgba(76, 175, 80, 0.6);
+        }
+        
+        .team.loser .team-score {
+            color: rgba(235, 235, 235, 0.6);
+        }
+        
+        /* Animation classes */
+        .animate-in .scoreboard {
+            animation: bounceIn 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+        }
+        
+        .animate-in .team-name {
+            animation: fadeInDown 0.4s ease-out 0.4s forwards;
+        }
+        
+        .animate-in .team-score {
+            animation: scaleIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) 0.5s forwards;
+        }
+        
+        .animate-in .vs-separator {
+            animation: fadeIn 0.4s ease-out 0.6s forwards;
+        }
+        
+        .animate-out .scoreboard {
+            animation: bounceOut 0.5s cubic-bezier(0.55, 0.055, 0.675, 0.19) forwards;
+        }
+        
+        @keyframes bounceIn {
+            to {
+                transform: scale(1) rotate(0deg);
+                opacity: 1;
+            }
+        }
+        
+        @keyframes bounceOut {
+            to {
+                transform: scale(0) rotate(5deg);
+                opacity: 0;
+            }
+        }
+        
+        @keyframes fadeInDown {
+            to {
+                transform: translateY(0);
+                opacity: 1;
+            }
+        }
+        
+        @keyframes scaleIn {
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+        
+        @keyframes fadeIn {
+            to {
+                opacity: 1;
+            }
+        }
+        
+        /* Sport-specific themes */
+        .scoreboard-container.football {
+            border-color: rgb(76, 175, 80);
+        }
+        
+        .scoreboard-container.football .competition-name,
+        .scoreboard-container.football .team-score {
+            color: rgb(76, 175, 80);
+        }
+        
+        .scoreboard-container.basketball {
+            border-color: rgb(255, 152, 0);
+        }
+        
+        .scoreboard-container.basketball .competition-name,
+        .scoreboard-container.basketball .team-score {
+            color: rgb(255, 152, 0);
+        }
+        
+        .scoreboard-container.tennis {
+            border-color: rgb(156, 39, 176);
+        }
+        
+        .scoreboard-container.tennis .competition-name,
+        .scoreboard-container.tennis .team-score {
+            color: rgb(156, 39, 176);
+        }
+    </style>
+</head>
+<body>
+    <div class="scoreboard" id="scoreboard">
+        <div class="scoreboard-container" id="scoreboard-container">
+            <div class="match-header">
+                <div class="competition-name" id="f0">SERIE A</div>
+                <div class="match-time">
+                    <div class="time-indicator"></div>
+                    <span id="f5">45:00</span>
+                </div>
+            </div>
+            <div class="scores-container">
+                <div class="team" id="home-team">
+                    <div class="team-name" id="f1">MILAN</div>
+                    <div class="team-score" id="f2">2</div>
+                </div>
+                <div class="vs-separator">VS</div>
+                <div class="team" id="away-team">
+                    <div class="team-name" id="f3">INTER</div>
+                    <div class="team-score" id="f4">1</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+    <script>
+        // CasparCG Template Functions
+        let isPlaying = false;
+        let previousScores = { home: 0, away: 0 };
+
+        function play() {
+            if (isPlaying) return;
+            isPlaying = true;
+            document.body.classList.add('animate-in');
+            document.body.classList.remove('animate-out');
+            console.log('Sports Scoreboard: Playing');
+        }
+
+        function stop() {
+            if (!isPlaying) return;
+            isPlaying = false;
+            document.body.classList.remove('animate-in');
+            document.body.classList.add('animate-out');
+            console.log('Sports Scoreboard: Stopping');
+            
+            setTimeout(() => {
+                document.body.classList.remove('animate-out');
+            }, 600);
+        }
+
+        function update(data) {
+            console.log('Sports Scoreboard: Updating', data);
+            
+            // Parse string data if needed
+            if (typeof data === 'string') {
+                try {
+                    data = JSON.parse(data);
+                } catch (e) {
+                    console.error('Failed to parse data:', e);
+                    return;
+                }
+            }
+            
+            // Update competition name
+            if (data.f0 !== undefined) {
+                document.getElementById('f0').textContent = data.f0.toUpperCase();
+            }
+            
+            // Update home team name
+            if (data.f1 !== undefined) {
+                document.getElementById('f1').textContent = data.f1.toUpperCase();
+            }
+            
+            // Update home team score
+            if (data.f2 !== undefined) {
+                const homeScoreEl = document.getElementById('f2');
+                const newHomeScore = parseInt(data.f2);
+                if (newHomeScore !== previousScores.home && isPlaying) {
+                    homeScoreEl.classList.add('score-update');
+                    setTimeout(() => homeScoreEl.classList.remove('score-update'), 500);
+                }
+                homeScoreEl.textContent = data.f2;
+                previousScores.home = newHomeScore;
+            }
+            
+            // Update away team name
+            if (data.f3 !== undefined) {
+                document.getElementById('f3').textContent = data.f3.toUpperCase();
+            }
+            
+            // Update away team score
+            if (data.f4 !== undefined) {
+                const awayScoreEl = document.getElementById('f4');
+                const newAwayScore = parseInt(data.f4);
+                if (newAwayScore !== previousScores.away && isPlaying) {
+                    awayScoreEl.classList.add('score-update');
+                    setTimeout(() => awayScoreEl.classList.remove('score-update'), 500);
+                }
+                awayScoreEl.textContent = data.f4;
+                previousScores.away = newAwayScore;
+            }
+            
+            // Update match time
+            if (data.f5 !== undefined) {
+                document.getElementById('f5').textContent = data.f5;
+            }
+            
+            // Update sport theme
+            if (data.f6 !== undefined) {
+                const container = document.getElementById('scoreboard-container');
+                container.className = `scoreboard-container ${data.f6}`;
+            }
+            
+            // Update winner/loser highlighting
+            if (previousScores.home > previousScores.away) {
+                document.getElementById('home-team').classList.add('winner');
+                document.getElementById('away-team').classList.add('loser');
+            } else if (previousScores.away > previousScores.home) {
+                document.getElementById('away-team').classList.add('winner');
+                document.getElementById('home-team').classList.add('loser');
+            } else {
+                document.getElementById('home-team').classList.remove('winner', 'loser');
+                document.getElementById('away-team').classList.remove('winner', 'loser');
+            }
+        }
+
+        function next() {
+            console.log('Sports Scoreboard: Next');
+        }
+
+        // Auto-play on load for testing
+        window.addEventListener('load', () => {
+            console.log('Sports Scoreboard Template Loaded');
+            // Initialize scores
+            previousScores.home = parseInt(document.getElementById('f2').textContent);
+            previousScores.away = parseInt(document.getElementById('f4').textContent);
+            // Uncomment for auto-preview
+            // setTimeout(play, 500);
+        });
+
+        // Export for CasparCG
+        window.play = play;
+        window.stop = stop;
+        window.update = update;
+        window.next = next;
+    </script>
+</body>
+</html>
