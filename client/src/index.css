@@ -1,0 +1,82 @@
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+/* Scrollbar personalizzata per tema dark */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1e1e1e;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #555;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #777;
+}
+
+/* Stili per il drag and drop */
+.dragging {
+  opacity: 0.5;
+}
+
+.drag-over {
+  border: 2px dashed #3f51b5;
+}
+
+/* Stili per i pannelli ridimensionabili */
+.resizable-panel {
+  position: relative;
+  overflow: hidden;
+}
+
+.resizable-handle {
+  position: absolute;
+  background-color: rgba(255, 255, 255, 0.1);
+  transition: background-color 0.2s;
+}
+
+.resizable-handle:hover {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+.resizable-handle-right {
+  width: 8px;
+  height: 100%;
+  right: 0;
+  top: 0;
+  cursor: ew-resize;
+}
+
+.resizable-handle-bottom {
+  width: 100%;
+  height: 8px;
+  bottom: 0;
+  left: 0;
+  cursor: ns-resize;
+}
+
+.resizable-handle-corner {
+  width: 16px;
+  height: 16px;
+  right: 0;
+  bottom: 0;
+  cursor: nwse-resize;
+}
