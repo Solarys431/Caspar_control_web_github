@@ -2,6 +2,8 @@
 
 CasparCG Control Web è un'applicazione web professionale per il controllo completo del server CasparCG. L'applicazione consente agli utenti di gestire tutti gli aspetti del server, inclusi playout video, grafica in sovraimpressione, controllo mixer e gestione rundown/playlist.
 
+> **Sviluppo** — Sviluppato con l'assistenza di Claude Code (Anthropic).
+
 ## Caratteristiche Principali
 
 - **Browser Media**: Visualizza e seleziona i file multimediali disponibili sul server CasparCG.
